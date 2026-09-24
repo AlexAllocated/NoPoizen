@@ -6,18 +6,7 @@ local LibChev = NoPoizen.LibChev
 
 -- Only sanitized primitives enter this addon-owned, session-only bounded history.
 function NoPoizen:LogDiagnostic(kind, message)
-	self.diagnosticHistory = self.diagnosticHistory or LibChev.NewLog()
-	local now
-	if self.API and type(self.API.GetTime) == "function" then
-		local ok, value = pcall(self.API.GetTime)
-		if ok then
-			now = LibChev.Number(value)
-		end
-	end
-	LibChev.AppendLog(self.diagnosticHistory, message, kind, now, { maxLines = 60, maxEntry = 240 })
-	self.diagnosticLog = self.diagnosticHistory.entries
-	self.diagnosticSequence = self.diagnosticHistory.sequence
-	self.diagnosticDropped = self.diagnosticHistory.dropped
+	self:GetDebugController():Append(message, kind)
 end
 
 function NoPoizen:RecordPoisonObservation(reason, state)
@@ -36,7 +25,7 @@ function NoPoizen:RecordPoisonObservation(reason, state)
 	end
 end
 
-function NoPoizen:BuildDiagnostics()
+function NoPoizen:BuildDiagnosticReport()
 	local ok, version = pcall(self.API.GetAddOnVersion, self.addonName)
 	local environment = LibChev.ReadEnvironment(self.API)
 	local report = LibChev.DiagnosticReport("NoPoizen", ok and version or "unknown", environment)
@@ -84,22 +73,13 @@ function NoPoizen:BuildDiagnostics()
 		end
 	end
 	Add("historyDropped", self.diagnosticDropped or 0)
-	for index, entry in ipairs(self.diagnosticLog or {}) do
-		if index > 60 then
-			break
-		end
-		Add("history." .. index, LibChev.FormatEntry(entry))
-	end
 	return report:Text()
 end
 
+function NoPoizen:BuildDiagnostics()
+	return self:GetDebugController():BuildDiagnosticExport()
+end
+
 function NoPoizen:ShowDiagnostics()
-	local report = self:BuildDiagnostics()
-	if self.OpenDiagnosticsWindow and self:OpenDiagnosticsWindow(report) then
-		return
-	end
-	-- A chat report also works while Settings/Edit Mode cannot be opened.
-	for line in report:gmatch("[^\n]+") do
-		self:Print(line)
-	end
+	return self:GetDebugController():ShowDiagnostics()
 end

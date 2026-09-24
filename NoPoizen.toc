@@ -1,11 +1,13 @@
 ## Interface: 120000, 120001, 120100, 16001
 ## Title: NoPoizen
-## Version: 1.1.0-beta.1
+## Version: 1.1.0-beta.2
 ## Notes: Warns Rogues when lethal/non-lethal poisons are missing.
 ## SavedVariablesPerCharacter: NoPoizenDBChar
 ## Author: Chev
 
 Libs/libchev/libchev.lua
+Libs/libchev/Debug.lua
+Libs/libchev/DebugWindow.lua
 Libs/libchev/ReportWindow.lua
 Libs/libchev/SelfTests.lua
 Core.lua

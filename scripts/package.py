@@ -17,8 +17,9 @@ def payloads(root, library_source=None):
     if not match:
         raise ValueError('Missing or invalid addon version')
     files = [line for line in toc.splitlines() if line and not line.startswith('#')]
-    if len(files) != len(set(files)) or files[:3] != [
-        'Libs/libchev/libchev.lua', 'Libs/libchev/ReportWindow.lua', 'Libs/libchev/SelfTests.lua'
+    if len(files) != len(set(files)) or files[:5] != [
+        'Libs/libchev/libchev.lua', 'Libs/libchev/Debug.lua', 'Libs/libchev/DebugWindow.lua',
+        'Libs/libchev/ReportWindow.lua', 'Libs/libchev/SelfTests.lua'
     ]:
         raise ValueError('Invalid TOC load order or duplicate entries')
     if any(not line.endswith('.lua') or line.startswith('scripts/') for line in files):
@@ -37,7 +38,7 @@ def payloads(root, library_source=None):
             raise ValueError(f'Missing or unsafe runtime file: {name}')
         result[name] = source.read_bytes()
     manifest = json.loads(result['Libs/libchev/manifest.json'])
-    expected = {'libchev.lua', 'ReportWindow.lua', 'SelfTests.lua', 'LICENSE'}
+    expected = {'libchev.lua', 'Debug.lua', 'DebugWindow.lua', 'ReportWindow.lua', 'SelfTests.lua', 'LICENSE'}
     if manifest['repository'] != 'https://github.com/AlexAllocated/libchev' or set(manifest['files']) != expected:
         raise ValueError('Unexpected library manifest')
     for name, digest in manifest['files'].items():

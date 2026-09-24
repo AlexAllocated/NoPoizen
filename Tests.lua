@@ -40,27 +40,34 @@ for _, case in ipairs(LibChev.SelfTests()) do
 	NoPoizen:RegisterTest(case.name, case.run)
 end
 
-function NoPoizen:RunTests(reverse)
+-- Adapt the addon-owned named registry to the shared runner's ordered cases.
+function NoPoizen:GetTestCases()
 	local names, cases = {}, {}
-	for name in pairs(self.tests) do
+	for name in pairs(self.tests or {}) do
 		names[#names + 1] = name
 	end
 	table.sort(names)
 	for _, name in ipairs(names) do
 		cases[#cases + 1] = { name = name, run = self.tests[name] }
 	end
-	local result = LibChev.RunTests(cases, {
-		reverse = reverse,
-		onFailure = function(failure)
-			self:Print("FAIL " .. failure.name .. ": " .. failure.error)
-		end,
-	})
-	self:Print(LibChev.TestSummary(result))
-	return result.failed == 0, result.passed, result.failed
+	return cases
 end
 
--- Every regression operates on a detached addon instance. No live state, frames,
--- timers, sound, saved variables or Blizzard tables are changed by /np test.
+function NoPoizen:RunTests(reverse)
+	-- A transient controller keeps the original headless API free of persistent
+	-- controller/log/UI mutations, even before the addon has initialized.
+	local success, passed, failed = self:CreateDebugController():RunTests(reverse, false)
+	return success, passed, failed
+end
+
+function NoPoizen:ShowTestResults(reverse)
+	local success, passed, failed = self:GetDebugController():RunTests(reverse, true)
+	return success, passed, failed
+end
+
+-- Every regression operates on a detached addon instance. The suite itself never
+-- changes live state, frames, timers, sound, saved variables or Blizzard tables.
+-- Only explicit user-facing presentation opens the addon-owned report window.
 function NoPoizen:CreateTestFixture()
 	local fixture = {}
 	for key, value in pairs(self) do
@@ -105,6 +112,19 @@ function NoPoizen:CreateTestFixture()
 	fixture.ApplySavedIndicatorAnchor = function() end
 	fixture.Print = function(f, message)
 		f.lastPrint = message
+	end
+	fixture.GetDebugUIPolicy = function()
+		return {
+			restricted = function()
+				return true
+			end,
+			canMutate = function()
+				return false
+			end,
+			createFrame = function()
+				error("fixture must never create live UI")
+			end,
+		}
 	end
 	fixture.LogDiagnostic = function() end
 	fixture.RecordPoisonObservation = function() end

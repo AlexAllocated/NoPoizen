@@ -56,7 +56,9 @@ Notes:
 
 - `/nopoizen options` or `/np options` - Open NoPoizen settings
 - `/nopoizen edit` or `/np edit` - Move and scale the indicator
-- `/nopoizen test` or `/np test` - Run isolated addon tests
+- `/nopoizen test` or `/np test` - Run isolated addon tests and open results in the shared debug console (chat fallback when unavailable)
+- `/np debug` or `/np dump` - Open the shared console with category filters, fuzzy/quoted search, copying, and live log scrolling
+- `/np dump CATEGORY` - Show one category; `/np dump clear` clears the session log and filters
 - `/np diagnostics` - Copy client capabilities, poison state, bounded recent history, and safe weapon-coating observations
 - `/np enable` or `/np disable` - Enable or disable reminders
 

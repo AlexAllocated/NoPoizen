@@ -13,6 +13,126 @@ local function Fixture()
 	return f
 end
 
+local function TestReportFixture()
+	local f = Fixture()
+	f.tests = { passing = function() end }
+	f.messages = {}
+	f.Print = function(owner, message)
+		owner.messages[#owner.messages + 1] = message
+	end
+	f.API.GetAddOnVersion = function()
+		return "fixture-version"
+	end
+	return f
+end
+
+NoPoizen:RegisterTest("test runner remains headless with unchanged returns and order", function()
+	local f = TestReportFixture()
+	local order = {}
+	f.tests = {
+		a = function()
+			order[#order + 1] = "a"
+		end,
+		b = function()
+			order[#order + 1] = "b"
+		end,
+	}
+	local function CheckReturns(...)
+		Equal(select("#", ...), 3)
+		local ok, passed, failed = ...
+		Equal(ok, true)
+		Equal(passed, 2)
+		Equal(failed, 0)
+	end
+	CheckReturns(f:RunTests())
+	Equal(table.concat(order), "ab")
+	order = {}
+	CheckReturns(f:RunTests(true))
+	Equal(table.concat(order), "ba")
+	Equal(f.diagnosticsWindow, nil)
+	Equal(f.debugController, nil)
+	Equal(f.diagnosticHistory, nil)
+end)
+
+NoPoizen:RegisterTest("slash test replaces test history with current shared results", function()
+	local f = TestReportFixture()
+	f:HandleSlashCommand("test")
+	local controller = f:GetDebugController()
+	local report = controller:GetText("TEST", "")
+	assert(report:find("NoPoizen", 1, true))
+	assert(report:find("fixture-version", 1, true))
+	assert(report:find("libchev", 1, true))
+	assert(report:find("1 passed, 0 failed", 1, true))
+	f.tests.second = function() end
+	f:HandleSlashCommand("TEST")
+	Equal(f:GetDebugController(), controller)
+	report = controller:GetText("TEST", "")
+	assert(report:find("2 passed, 0 failed", 1, true))
+	assert(not report:find("1 passed, 0 failed", 1, true))
+end)
+
+NoPoizen:RegisterTest("slash test includes failure names and details under addon policy", function()
+	local f = TestReportFixture()
+	f.tests.broken = function()
+		error("fixture failure detail")
+	end
+	f:HandleSlashCommand("test")
+	local report = f:GetDebugController():GetText("TEST", "")
+	assert(report:find("1 passed, 1 failed", 1, true))
+	assert(report:find("broken", 1, true))
+	assert(report:find("fixture failure detail", 1, true))
+	local ok, passed, failed = f:ShowTestResults()
+	Equal(ok, false)
+	Equal(passed, 1)
+	Equal(failed, 1)
+end)
+
+for _, mode in ipairs({ "blocked", "missing", "throwing" }) do
+	local unavailable = mode
+	NoPoizen:RegisterTest("slash test chat fallback when UI is " .. unavailable, function()
+		local f = TestReportFixture()
+		f.GetDebugUIPolicy = function()
+			return {
+				restricted = function()
+					return unavailable == "blocked"
+				end,
+				canMutate = function()
+					return true
+				end,
+				createFrame = unavailable ~= "missing" and function()
+					error("opening failed")
+				end or nil,
+			}
+		end
+		f.tests.broken = function()
+			error("fallback failure detail")
+		end
+		f:HandleSlashCommand("test")
+		local chat = table.concat(f.messages, "\n")
+		assert(chat:find("1 passed, 1 failed", 1, true))
+		assert(chat:find("broken", 1, true))
+		assert(chat:find("fallback failure detail", 1, true))
+		Equal(f.diagnosticsWindow, nil)
+	end)
+end
+
+NoPoizen:RegisterTest("shared debug filters and commands use private consumer history", function()
+	local f = TestReportFixture()
+	f.LogDiagnostic = NoPoizen.LogDiagnostic
+	f:LogDiagnostic("poison", "private poison observation")
+	f:LogDiagnostic("audio", "private sound observation")
+	local controller = f:GetDebugController()
+	controller:SetCategory("POISON")
+	controller:SetSearch("observation")
+	local text = controller:GetText()
+	assert(text:find("private poison observation", 1, true))
+	assert(not text:find("private sound observation", 1, true))
+	f:HandleSlashCommand("dump clear")
+	Equal(#f.diagnosticLog, 0)
+	Equal(controller:GetCategory(), "ALL")
+	Equal(controller:GetSearch(), "")
+end)
+
 NoPoizen:RegisterTest("core malformed anchors and nonfinite settings are rejected", function()
 	local f = Fixture()
 	for _, value in ipairs({ false, "broken", math.huge, -math.huge, 0 / 0, {} }) do
@@ -222,6 +342,10 @@ NoPoizen:RegisterTest("diagnostics common header and history use only private ad
 	end
 	f.LogDiagnostic = NoPoizen.LogDiagnostic
 	f:LogDiagnostic("test event", "private log message")
+	assert(
+		not f:BuildDiagnosticReport():find("private log message", 1, true),
+		"domain callback must omit generic history"
+	)
 	local report = f:BuildDiagnostics()
 	assert(report:find("addon=NoPoizen", 1, true))
 	assert(report:find("version=test-version", 1, true))
@@ -229,6 +353,8 @@ NoPoizen:RegisterTest("diagnostics common header and history use only private ad
 	assert(report:find("capability.1=private client observation", 1, true))
 	assert(report:find("[TEST_EVENT]", 1, true))
 	assert(report:find("private log message", 1, true))
+	local _, copies = report:gsub("private log message", "")
+	Equal(copies, 1)
 end)
 
 NoPoizen:RegisterTest("diagnostics combined report has one overall character bound", function()
@@ -243,7 +369,13 @@ NoPoizen:RegisterTest("diagnostics combined report has one overall character bou
 		end
 		return rows
 	end
+	f.LogDiagnostic = NoPoizen.LogDiagnostic
+	for index = 1, 60 do
+		f:LogDiagnostic("history", string.rep("x", 220) .. " recent event " .. index)
+	end
 	local report = f:BuildDiagnostics()
 	assert(#report <= 32768)
-	assert(report:find("[truncated]", 1, true))
+	assert(report:find("[diagnostics truncated]", 1, true))
+	assert(report:find("[older events omitted]", 1, true))
+	assert(report:find("recent event 60", 1, true), "oversized domain report must retain newest history")
 end)

@@ -1,5 +1,17 @@
 # NoPoizen changelog
 
+## 1.1.0-beta.2
+
+- Adopt the shared libchev debug controller and console for test results, diagnostics, log filtering/search, copying, scrolling, and common debug commands.
+- Fix `/np test` and `/nopoizen test` to open current results in that console, including addon/library versions, suite purpose, pass/fail totals, and permitted failure names/details. Reuse the console on subsequent runs and fall back to chat when UI is restricted, unavailable, or fails to open.
+- Add `/np debug`, `/np dump CATEGORY`, and `/np dump clear`. Poison-specific diagnostics remain addon-owned and bounded to 32,768 characters; the session log retains at most 60 entries of 240 characters.
+- Keep programmatic `RunTests(reverse)` headless with its existing return values. Regression tests use detached fixtures and never patch live Blizzard globals or addon state.
+- Validate 123 isolated tests in both orders under Lua 5.1/5.2, plus Retail/Forever startup and actual slash-command UI simulations.
+
+**Compatibility:** Live client validation remains pending. Forever poison monitoring remains unsupported; tests and diagnostics are available. This release is distributed on GitHub; no CurseForge/Wago upload is included.
+
+**Install:** extract `NoPoizen-1.1.0-beta.2.zip` into `Interface/AddOns`, preserving the single `NoPoizen` folder. Reload and run `/np test`; expect a copyable report with 123 passed and 0 failed.
+
 ## 1.1.0-beta.1
 
 - Update Retail interface support for 12.1 and harden poison detection around restricted or unavailable aura data.
