@@ -570,6 +570,9 @@ function NoPoizen:Enable()
 	if self.RefreshPoisonState then
 		self:RefreshPoisonState("ENABLE")
 	end
+	if self.TryRegisterEditModeCallbacks then
+		self:TryRegisterEditModeCallbacks()
+	end
 	if self.RefreshPoisonIndicatorVisualState then
 		self:RefreshPoisonIndicatorVisualState()
 	end
@@ -583,6 +586,9 @@ function NoPoizen:Disable()
 	self.db.enabled = false
 
 	self.isEnabled = false
+	if self.UnregisterEditModeCallbacks then
+		self:UnregisterEditModeCallbacks()
+	end
 	if self.EndPoisonIndicatorEditMode then
 		self:EndPoisonIndicatorEditMode(false)
 	end
@@ -674,6 +680,9 @@ function NoPoizen:OnLogin()
 end
 
 function NoPoizen:ADDON_LOADED(_, loadedAddonName)
+	if self.isEnabled and self.TryRegisterEditModeCallbacks then
+		self:TryRegisterEditModeCallbacks()
+	end
 	if loadedAddonName ~= self.addonName then
 		return
 	end
@@ -706,6 +715,7 @@ function NoPoizen:LOADING_SCREEN_ENABLED()
 		return
 	end
 	self.isLoadingScreenActive = true
+	self.blizzardEditModeActive = false
 	if self.EndPoisonIndicatorEditMode then
 		self:EndPoisonIndicatorEditMode(false)
 	end

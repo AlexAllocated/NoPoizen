@@ -19,11 +19,12 @@ On supported Retail clients, it watches your current poison state and warns when
 
 ## Indicator Position and Scale
 
-Use `/np edit` while out of combat to open NoPoizen's position and scale editor.
+Open Blizzard **Edit Mode** to see NoPoizen alongside your other HUD elements. Drag its preview or click it to open position and scale controls. `/np edit` also opens those controls directly.
 
 - Drag the indicator to place it where you want.
 - Scale the indicator up/down in real time.
-- Save your changes, cancel them, or reset to the default position and scale.
+- Use **Save** in the NoPoizen panel to keep changes, or Cancel/Revert/Reset as needed.
+- NoPoizen changes are independent of Blizzard layout Save/Revert. Closing Edit Mode cancels any unsaved NoPoizen changes.
 - Entering combat, loading a new area, or disabling the addon cancels unsaved edits.
 
 ## Options (Blizzard AddOns Panel)

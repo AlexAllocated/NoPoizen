@@ -74,6 +74,9 @@ end
 function NoPoizen:HandleHUDLifecycleEvent(frame, eventName, restrictionType, restrictionState)
 	if eventName == "PLAYER_LOGOUT" then
 		self.isLoggingOut = true
+		if self.UnregisterEditModeCallbacks then
+			self:UnregisterEditModeCallbacks()
+		end
 		frame:SetScript("OnUpdate", nil)
 		self:EndPoisonIndicatorEditMode(false)
 		return
@@ -90,6 +93,7 @@ function NoPoizen:HandleHUDLifecycleEvent(frame, eventName, restrictionType, res
 			and type(restrictionState) == "number"
 			and restrictionState == 0
 		if not inactive then
+			self.blizzardEditModeActive = false
 			self:EndPoisonIndicatorEditMode(false)
 		end
 	end
@@ -101,6 +105,9 @@ function NoPoizen:HandleHUDLifecycleEvent(frame, eventName, restrictionType, res
 			return
 		end
 		self.hudRestrictionTransition = false
+		if self.TryRegisterEditModeCallbacks then
+			self:TryRegisterEditModeCallbacks()
+		end
 		if self.pendingOptionsRegistration and not self:IsHUDRestricted() then
 			self:InitializeOptionsWindow()
 		end
@@ -277,9 +284,14 @@ function NoPoizen:EnsurePoisonIndicatorWidget()
 	hostFrame.EditBackground = background
 	local label = hostFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	label:SetPoint("BOTTOM", hostFrame, "TOP", 0, 6)
-	label:SetText("NoPoizen: drag to move")
+	label:SetText("NoPoizen: drag to move; click for settings")
 	label:Hide()
 	hostFrame.EditLabel = label
+	hostFrame:SetScript("OnMouseUp", function(_, button)
+		if button == "LeftButton" and self:IsPoisonIndicatorInEditMode() then
+			self:BeginPoisonIndicatorEditMode()
+		end
+	end)
 	hostFrame:SetScript("OnDragStart", function(frame)
 		if self:IsPoisonIndicatorInEditMode() and self:CanMutateHUDFrame(frame) then
 			frame:StartMoving()
@@ -320,7 +332,7 @@ local function EnsureEditDialog(owner)
 	title:SetText("NoPoizen Position and Scale")
 	local hint = dialog:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 	hint:SetPoint("TOP", title, "BOTTOM", 0, -10)
-	hint:SetText("Drag the indicator, then save your changes.")
+	hint:SetText("Use Save below to keep NoPoizen changes.\nClosing Edit Mode cancels unsaved changes.")
 	local slider = CreateFrame("Slider", nil, dialog, "OptionsSliderTemplate")
 	slider:SetPoint("TOPLEFT", 24, -84)
 	slider:SetPoint("TOPRIGHT", -24, -84)
@@ -366,14 +378,14 @@ local function EnsureEditDialog(owner)
 		owner:ResetPoisonIndicatorEditSessionToDefaults()
 	end)
 	AddButton("Save", 24, 18, function()
-		owner:EndPoisonIndicatorEditMode(true)
+		owner:FinishPoisonIndicatorEditMode(true)
 	end)
 	AddButton("Cancel", 188, 18, function()
-		owner:EndPoisonIndicatorEditMode(false)
+		owner:FinishPoisonIndicatorEditMode(false)
 	end)
 	dialog:SetScript("OnHide", function()
 		if owner.poisonIndicatorEditActive then
-			owner:EndPoisonIndicatorEditMode(false)
+			owner:FinishPoisonIndicatorEditMode(false)
 		end
 	end)
 	owner.poisonIndicatorEditDialog = dialog
@@ -422,7 +434,7 @@ function NoPoizen:ResetPoisonIndicatorEditSessionToDefaults()
 	self:RefreshPoisonIndicatorEditDialog()
 end
 
-function NoPoizen:BeginPoisonIndicatorEditMode()
+function NoPoizen:BeginPoisonIndicatorEditMode(source, showDialog)
 	if not self.isEnabled or self.isLoadingScreenActive or self.isLoggingOut or self:IsHUDRestricted() then
 		return false
 	end
@@ -440,17 +452,32 @@ function NoPoizen:BeginPoisonIndicatorEditMode()
 	if not self.poisonIndicatorEditSession then
 		self.poisonIndicatorEditSession = {
 			database = self.db,
+			source = source or (self.blizzardEditModeActive and "blizzard" or "standalone"),
 			saved = {
 				widgetScale = self:GetOption("widgetScale"),
 				anchor = self:DeepCopy(self:GetIndicatorAnchor()),
 			},
 		}
 	end
+	if source == "blizzard" then
+		self.poisonIndicatorEditSession.source = source
+	end
 	self.poisonIndicatorEditActive = true
 	self:RefreshPoisonIndicatorVisualState()
 	self:RefreshPoisonIndicatorEditDialog()
-	dialog:Show()
+	if showDialog ~= false then
+		dialog:Show()
+	end
 	return true
+end
+
+-- Save/Cancel finishes a transaction, while native Edit Mode keeps the preview
+-- available for another edit. Lifecycle teardown calls End directly and never restarts.
+function NoPoizen:FinishPoisonIndicatorEditMode(save)
+	self:EndPoisonIndicatorEditMode(save)
+	if self.blizzardEditModeActive then
+		self:BeginPoisonIndicatorEditMode("blizzard", false)
+	end
 end
 
 function NoPoizen:EndPoisonIndicatorEditMode(save)

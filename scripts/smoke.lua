@@ -245,7 +245,7 @@ C_UnitAuras = {
 }
 C_AddOns = {
 	GetAddOnMetadata = function()
-		return "1.0.8-beta.1"
+		return "1.0.8-beta.2"
 	end,
 }
 C_Item = {
@@ -265,6 +265,40 @@ Settings = {
 	OpenToCategory = Noop,
 }
 WOW_PROJECT_MAINLINE, WOW_PROJECT_ID = 1, client == "retail" and 1 or 2
+-- Public callback bridge and a read-only foreign manager fixture.
+local nativeCallbacks, nativeActive = {}, false
+EventRegistry = {
+	RegisterCallback = function(_, event, callback, owner)
+		assert(type(owner) == "string", "only primitive callback ownership crosses the boundary")
+		nativeCallbacks[event] = { callback = callback, owner = owner }
+	end,
+	UnregisterCallback = function(_, event, owner)
+		local entry = nativeCallbacks[event]
+		if entry and entry.owner == owner then
+			nativeCallbacks[event] = nil
+		end
+	end,
+}
+EditModeManagerFrame = setmetatable({}, {
+	__index = {
+		IsForbidden = function()
+			return false
+		end,
+		IsEditModeActive = function()
+			return nativeActive
+		end,
+	},
+	__newindex = function()
+		error("addon wrote to Blizzard Edit Mode manager")
+	end,
+})
+local function NativeEvent(event)
+	nativeActive = event == "EditMode.Enter"
+	local entry = nativeCallbacks[event]
+	if entry then
+		entry.callback(entry.owner)
+	end
+end
 local namespace = {}
 for line in io.lines(root .. "/NoPoizen.toc") do
 	if line:match("%.lua$") then
@@ -314,6 +348,18 @@ NoPoizen:SetOption("widgetScale", 1.5)
 NoPoizen:EndPoisonIndicatorEditMode(false)
 assert(NoPoizen.db.widgetScale == 1)
 assert(NoPoizen:OpenOptionsWindow())
+NativeEvent("EditMode.Enter")
+assert(NoPoizen:IsPoisonIndicatorInEditMode() and not NoPoizen.poisonIndicatorEditDialog:IsShown())
+NoPoizen.poisonIndicatorHostFrame.scripts.OnMouseUp(NoPoizen.poisonIndicatorHostFrame, "LeftButton")
+assert(NoPoizen.poisonIndicatorEditDialog:IsShown())
+NoPoizen:SetOption("widgetScale", 1.5)
+NoPoizen:FinishPoisonIndicatorEditMode(true)
+assert(NoPoizen:IsPoisonIndicatorInEditMode() and not NoPoizen.poisonIndicatorEditDialog:IsShown())
+NoPoizen:SetOption("widgetScale", 1.8)
+NativeEvent("EditMode.Exit")
+assert(NoPoizen.db.widgetScale == 1.5 and not NoPoizen.poisonIndicatorEditActive)
+NoPoizen:SetOption("widgetScale", 1)
+
 local database, state, runtime, pendingTimers, soundCount =
 	NoPoizen.db, NoPoizen.currentPoisonState, NoPoizen.registeredRuntimeEvents, #timers, #sounds
 assert(NoPoizen:RunTests())
@@ -325,6 +371,7 @@ NoPoizen:LOADING_SCREEN_ENABLED()
 assert(NoPoizen.currentPoisonState == nil and not NoPoizen.poisonIndicatorHostFrame:IsShown())
 NoPoizen:LOADING_SCREEN_DISABLED()
 NoPoizen:Disable()
+assert(next(nativeCallbacks) == nil)
 Advance(2)
 assert(not NoPoizen.isEnabled and NoPoizen.currentPoisonState == nil)
 NoPoizen:Enable()

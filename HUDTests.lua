@@ -250,3 +250,182 @@ NoPoizen:RegisterTest("HUD stale options controls cannot write a replacement dat
 	Equal(f:ApplyOptionsControlValue("audioVolume", 0.9), false)
 	Equal(f.db.audioVolume, f.DEFAULTS.audioVolume)
 end)
+
+local function NativeFixture()
+	local f = Fixture()
+	local registry = { callbacks = {}, active = false, registrations = 0 }
+	f.EditModeAPI = {
+		Register = function(event, callback)
+			registry.callbacks[event] = callback
+			registry.registrations = registry.registrations + 1
+			return true
+		end,
+		Unregister = function(event)
+			registry.callbacks[event] = nil
+		end,
+		IsActive = function()
+			return registry.active
+		end,
+	}
+	function registry:Fire(event)
+		self.active = event == "EditMode.Enter"
+		local callback = self.callbacks[event]
+		if callback then
+			callback("private-owner")
+		end
+	end
+	return f, registry
+end
+
+NoPoizen:RegisterTest("native Edit Mode opens preview and clicking opens settings", function()
+	local f, registry = NativeFixture()
+	Equal(f:TryRegisterEditModeCallbacks(), true)
+	registry:Fire("EditMode.Enter")
+	Equal(f:IsPoisonIndicatorInEditMode(), true)
+	Equal(f.poisonIndicatorEditSession.source, "blizzard")
+	Equal(f.poisonIndicatorEditDialog.shown, nil)
+	f:BeginPoisonIndicatorEditMode()
+	Equal(f.poisonIndicatorEditDialog.shown, true)
+	f:SetOption("widgetScale", 1.5)
+	registry:Fire("EditMode.Exit")
+	Equal(f:GetOption("widgetScale"), 1)
+	Equal(f.poisonIndicatorEditActive, false)
+end)
+
+NoPoizen:RegisterTest("native save retains changes and keeps preview editable", function()
+	local f, registry = NativeFixture()
+	f:TryRegisterEditModeCallbacks()
+	registry:Fire("EditMode.Enter")
+	f:BeginPoisonIndicatorEditMode()
+	f:SetOption("widgetScale", 1.5)
+	f:FinishPoisonIndicatorEditMode(true)
+	Equal(f:GetOption("widgetScale"), 1.5)
+	Equal(f:IsPoisonIndicatorInEditMode(), true)
+	Equal(f.poisonIndicatorEditDialog.shown, false)
+	f:SetOption("widgetScale", 1.8)
+	registry:Fire("EditMode.Exit")
+	Equal(f:GetOption("widgetScale"), 1.5)
+end)
+
+NoPoizen:RegisterTest("native cancel reverts without removing the preview", function()
+	local f, registry = NativeFixture()
+	f:TryRegisterEditModeCallbacks()
+	registry:Fire("EditMode.Enter")
+	f:SetOption("widgetScale", 1.5)
+	f:FinishPoisonIndicatorEditMode(false)
+	Equal(f:GetOption("widgetScale"), 1)
+	Equal(f:IsPoisonIndicatorInEditMode(), true)
+end)
+
+NoPoizen:RegisterTest("native registration is idempotent and reconciles already open mode", function()
+	local f, registry = NativeFixture()
+	registry.active = true
+	f:TryRegisterEditModeCallbacks()
+	f:TryRegisterEditModeCallbacks()
+	Equal(registry.registrations, 2)
+	Equal(f:IsPoisonIndicatorInEditMode(), true)
+end)
+
+NoPoizen:RegisterTest("native disable unregisters and stale callbacks cannot affect a new lifetime", function()
+	local f, registry = NativeFixture()
+	f:TryRegisterEditModeCallbacks()
+	local oldEnter, oldExit = registry.callbacks["EditMode.Enter"], registry.callbacks["EditMode.Exit"]
+	registry:Fire("EditMode.Enter")
+	f:SetOption("widgetScale", 1.5)
+	f:Disable()
+	Equal(next(registry.callbacks), nil)
+	Equal(f:GetOption("widgetScale"), 1)
+	oldEnter()
+	Equal(f.poisonIndicatorEditActive, false)
+	f.isEnabled = true
+	f:TryRegisterEditModeCallbacks()
+	oldExit()
+	Equal(f:IsPoisonIndicatorInEditMode(), true)
+end)
+
+NoPoizen:RegisterTest("native partial registration rolls back and may retry", function()
+	local f, registry = NativeFixture()
+	local register = f.EditModeAPI.Register
+	f.EditModeAPI.Register = function(event, callback)
+		register(event, callback)
+		if event == "EditMode.Exit" then
+			error("partial failure")
+		end
+		return true
+	end
+	Equal(f:TryRegisterEditModeCallbacks(), false)
+	Equal(next(registry.callbacks), nil)
+	f.EditModeAPI.Register = register
+	Equal(f:TryRegisterEditModeCallbacks(), true)
+end)
+
+NoPoizen:RegisterTest("native callbacks respect restrictions loading and disable", function()
+	local f, registry = NativeFixture()
+	f:TryRegisterEditModeCallbacks()
+	f.HUDAPI.IsRestricted = function()
+		return true
+	end
+	registry:Fire("EditMode.Enter")
+	Equal(f.poisonIndicatorEditSession, nil)
+	f.HUDAPI.IsRestricted = function()
+		return false
+	end
+	f.isLoadingScreenActive = true
+	registry:Fire("EditMode.Enter")
+	Equal(f.poisonIndicatorEditSession, nil)
+	f.isLoadingScreenActive, f.isEnabled = false, false
+	registry:Fire("EditMode.Enter")
+	Equal(f.poisonIndicatorEditSession, nil)
+end)
+
+NoPoizen:RegisterTest("native restricted registration retries after lifecycle reconciliation", function()
+	local f, registry = NativeFixture()
+	f.HUDAPI.IsRestricted = function()
+		return true
+	end
+	Equal(f:TryRegisterEditModeCallbacks(), false)
+	Equal(registry.registrations, 0)
+	f.HUDAPI.IsRestricted = function()
+		return false
+	end
+	local listener = Frame()
+	f:HandleHUDLifecycleEvent(listener, "PLAYER_REGEN_ENABLED")
+	listener.OnUpdate()
+	Equal(registry.registrations, 2)
+end)
+
+NoPoizen:RegisterTest("native logout unregisters and cancels unsaved edits", function()
+	local f, registry = NativeFixture()
+	f:TryRegisterEditModeCallbacks()
+	local enter = registry.callbacks["EditMode.Enter"]
+	registry:Fire("EditMode.Enter")
+	f:SetOption("widgetScale", 1.5)
+	f:HandleHUDLifecycleEvent(Frame(), "PLAYER_LOGOUT")
+	Equal(next(registry.callbacks), nil)
+	Equal(f:GetOption("widgetScale"), 1)
+	enter()
+	Equal(f.poisonIndicatorEditActive, false)
+end)
+
+NoPoizen:RegisterTest("native exit leaves unrelated standalone editing alone", function()
+	local f, registry = NativeFixture()
+	f:TryRegisterEditModeCallbacks()
+	f:BeginPoisonIndicatorEditMode()
+	f:SetOption("widgetScale", 1.5)
+	registry:Fire("EditMode.Exit")
+	Equal(f:IsPoisonIndicatorInEditMode(), true)
+	Equal(f:GetOption("widgetScale"), 1.5)
+	f:FinishPoisonIndicatorEditMode(false)
+	Equal(f.poisonIndicatorEditActive, false)
+end)
+
+NoPoizen:RegisterTest("native enter preserves an existing standalone snapshot", function()
+	local f, registry = NativeFixture()
+	f:TryRegisterEditModeCallbacks()
+	f:BeginPoisonIndicatorEditMode()
+	f:SetOption("widgetScale", 1.5)
+	registry:Fire("EditMode.Enter")
+	Equal(f.poisonIndicatorEditSession.source, "blizzard")
+	registry:Fire("EditMode.Exit")
+	Equal(f:GetOption("widgetScale"), 1)
+end)
