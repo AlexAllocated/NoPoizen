@@ -77,6 +77,11 @@ NoPoizen.API = NoPoizen.API
 				C_Timer.After(delaySeconds, callbackFn)
 			end
 		end,
+		ReloadUI = function()
+			if type(ReloadUI) == "function" then
+				ReloadUI()
+			end
+		end,
 		GetBuildInfo = function()
 			return GetBuildInfo()
 		end,
@@ -638,16 +643,7 @@ function NoPoizen:HandleSlashCommand(input)
 		end
 		return
 	end
-	if command == "diagnostics" or command == "diag" then
-		self:ShowDiagnostics()
-		return
-	end
-	if command == "test" then
-		if self.RunTests then
-			self:RunTests()
-		else
-			self:Print("Tests are unavailable.")
-		end
+	if self:GetDebugController():HandleCommand(input or "") then
 		return
 	end
 	if command == "enable" then
@@ -661,7 +657,7 @@ function NoPoizen:HandleSlashCommand(input)
 		return
 	end
 
-	self:Print("Commands: /nopoizen options | edit | enable | disable | test | diagnostics")
+	self:Print("Commands: /nopoizen options | edit | enable | disable | test | debug | dump | diagnostics")
 end
 
 function NoPoizen:OnInitialize()

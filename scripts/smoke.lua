@@ -2,11 +2,21 @@
 local root, client = arg[1] or ".", arg[2] or "retail"
 local unpack = table.unpack or unpack
 local now, timers, sounds, restricted = 0, {}, {}, false
+local frameCount, chat = 0, {}
+DEFAULT_CHAT_FRAME = {
+	AddMessage = function(_, message)
+		chat[#chat + 1] = message
+	end,
+}
 local auras = { [2823] = true, [3408] = true }
 local frameMethods = {}
 local function Noop() end
 for _, name in ipairs({
 	"SetSize",
+	"SetOrientation",
+	"SetThumbTexture",
+	"Raise",
+	"StartSizing",
 	"SetWidth",
 	"SetHeight",
 	"SetAllPoints",
@@ -146,6 +156,7 @@ function frameMethods:SetShown(value)
 	end
 end
 function CreateFrame(kind, name, parent, template)
+	frameCount = frameCount + 1
 	local frame = setmetatable({ scripts = {}, events = {}, shown = false }, { __index = frameMethods })
 	if template == "OptionsSliderTemplate" then
 		frame.Text, frame.Low, frame.High = CreateFrame(), CreateFrame(), CreateFrame()
@@ -245,7 +256,7 @@ C_UnitAuras = {
 }
 C_AddOns = {
 	GetAddOnMetadata = function()
-		return "1.1.0-beta.1"
+		return "1.1.0-beta.2"
 	end,
 }
 C_Item = {
@@ -368,15 +379,82 @@ local liveLogText = {}
 for i, entry in ipairs(liveEntries) do
 	liveLogText[i] = NoPoizen.LibChev.FormatEntry(entry)
 end
-assert(NoPoizen:RunTests())
+local function AssertOriginalLog()
+	assert(NoPoizen.diagnosticHistory == liveLog and liveLog.entries == liveEntries)
+	assert(liveLog.sequence == liveSequence and liveLog.dropped == liveDropped and #liveEntries == #liveLogText)
+	for i, entry in ipairs(liveEntries) do
+		assert(NoPoizen.LibChev.FormatEntry(entry) == liveLogText[i])
+	end
+end
+local headlessFrames = frameCount
+local success, passed, failed = NoPoizen:RunTests()
+assert(success and failed == 0)
 assert(NoPoizen:RunTests(true))
+assert(frameCount == headlessFrames and NoPoizen.diagnosticsWindow == nil, "headless tests must not create frames")
+AssertOriginalLog()
+SlashCmdList.NOPOIZEN("test")
+local testWindow = assert(NoPoizen.diagnosticsWindow)
+local controller = NoPoizen:GetDebugController()
+assert(testWindow:IsShown() and controller.window == testWindow)
+local summary = string.format("Test summary: %d passed, 0 failed (%d total).", passed, passed)
+assert(testWindow.TextBox:GetText():find(summary, 1, true))
+assert(controller:GetCategory() == "TEST")
+for _, button in ipairs({ "select", "clear", "reload", "tests", "diagnostics", "log" }) do
+	assert(testWindow.Buttons[button], "shared console control missing: " .. button)
+end
+local reportFrames = frameCount
+NoPoizen:ShowDiagnostics()
+assert(controller.mode == "report" and testWindow.TextBox:GetText():find("historyScope=session only", 1, true))
+SlashCmdList.NOPOIZEN("test")
+assert(
+	NoPoizen.diagnosticsWindow == testWindow and frameCount == reportFrames,
+	"slash tests must reuse the shared console"
+)
+assert(controller.mode == "log" and testWindow.TextBox:GetText():find(summary, 1, true))
+local currentText, currentLog, currentSequence =
+	testWindow.TextBox:GetText(), NoPoizen.diagnosticLog, NoPoizen.diagnosticSequence
+assert(NoPoizen:RunTests())
+assert(
+	testWindow.TextBox:GetText() == currentText and frameCount == reportFrames,
+	"headless tests must leave existing UI unchanged"
+)
+assert(NoPoizen.diagnosticLog == currentLog and NoPoizen.diagnosticSequence == currentSequence)
+-- Shared search/category controls operate on the same addon-owned event log.
+NoPoizen:LogDiagnostic("poison", "private poison observation")
+SlashCmdList.NOPOIZEN("dump poison")
+assert(controller:GetCategory() == "POISON")
+testWindow.Search:SetText('"private poison"')
+testWindow.Search.scripts.OnTextChanged(testWindow.Search, true)
+assert(controller:GetSearch() == '"private poison"')
+assert(testWindow.TextBox:GetText():find("private poison observation", 1, true))
+controller:SetCategory("ALL")
+testWindow.Buttons.tests.scripts.OnClick(testWindow.Buttons.tests)
+assert(
+	controller:GetCategory() == "ALL" and controller:GetSearch() == "",
+	"visible ALL view must survive test presentation"
+)
+assert(testWindow.TextBox:GetText():find(summary, 1, true))
+-- Failure injection is confined to this offline harness, never the live suite.
+NoPoizen.tests["offline presentation failure"] = function()
+	error("offline failure details")
+end
+SlashCmdList.NOPOIZEN("test")
+local failureText = testWindow.TextBox:GetText()
+assert(failureText:find(string.format("%d passed, 1 failed (%d total)", passed, passed + 1), 1, true))
+assert(failureText:find("offline presentation failure", 1, true))
+assert(failureText:find("offline failure details", 1, true))
+NoPoizen.tests["offline presentation failure"] = nil
+testWindow:Hide()
+restricted = true
+chat = {}
+SlashCmdList.NOPOIZEN("test")
+assert(not testWindow:IsShown() and frameCount == reportFrames, "restricted tests must not open or create UI")
+local fallback = table.concat(chat, "\n")
+assert(fallback:find("Debug console unavailable", 1, true))
+assert(fallback:find(summary, 1, true))
+restricted = false
 assert(NoPoizen.db == database and NoPoizen.currentPoisonState == state and NoPoizen.registeredRuntimeEvents == runtime)
 assert(#timers == pendingTimers and #sounds == soundCount, "tests must not invoke live adapters")
-assert(NoPoizen.diagnosticHistory == liveLog and liveLog.entries == liveEntries)
-assert(liveLog.sequence == liveSequence and liveLog.dropped == liveDropped and #liveEntries == #liveLogText)
-for i, entry in ipairs(liveEntries) do
-	assert(NoPoizen.LibChev.FormatEntry(entry) == liveLogText[i])
-end
 NoPoizen:ShowDiagnostics()
 NoPoizen:LOADING_SCREEN_ENABLED()
 assert(NoPoizen.currentPoisonState == nil and not NoPoizen.poisonIndicatorHostFrame:IsShown())
