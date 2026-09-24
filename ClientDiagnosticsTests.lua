@@ -190,7 +190,8 @@ NoPoizen:RegisterTest("client diagnostics sanitize untrusted build text and inva
 		return "1\n|Hlink|h", "69977", "date", 16001
 	end
 	api.GetWeaponSlot = function()
-		return 0 / 0
+		-- Return a nonfinite value successfully; do not test the throwing-API path.
+		return math.huge
 	end
 	local report = Report(api)
 	Contains(report, "version=1??Hlink?h")

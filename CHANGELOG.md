@@ -1,5 +1,13 @@
 # NoPoizen changelog
 
+## 1.1.0-beta.3
+
+- Fix the Forever 1.60.1 test failure caused by constructing NaN through division by zero. In-game core and diagnostic fixtures now use supported infinity constants and invalid primitive values.
+- Keep NaN rejection coverage in the offline harness for settings, saved anchors, numeric guards, diagnostic clocks, and weapon-slot enums. These extra checks are explicitly separate from the 123-test in-game count.
+- Add an offline source regression that rejects literal zero-division fixtures in every TOC-loaded file. Test throwing clocks separately from clocks that successfully return a nonfinite value.
+
+**Compatibility:** This fixes the reported test-fixture failure; live verification on Forever remains pending. Forever poison monitoring remains unsupported. Publication waits for the coordinated library update and release gate.
+
 ## 1.1.0-beta.2
 
 - Adopt the shared libchev debug controller and console for test results, diagnostics, log filtering/search, copying, scrolling, and common debug commands.
