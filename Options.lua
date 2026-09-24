@@ -27,7 +27,7 @@ local function CreateCheckbox(parent, optionKey, text, tooltipText, x, y)
 	end
 
 	checkbox:SetScript("OnClick", function(self)
-		NoPoizen:SetOption(optionKey, self:GetChecked() == true)
+		NoPoizen:ApplyOptionsControlValue(optionKey, self:GetChecked() == true)
 		NoPoizen:RefreshOptionsWindow()
 	end)
 
@@ -57,6 +57,10 @@ function NoPoizen:RefreshOptionsWindow()
 	end
 
 	local controls = self.optionControls
+	controls.database = self.db
+	if controls.enabled then
+		controls.enabled:SetChecked(self:GetOption("enabled") == true)
+	end
 	if controls.showVisualIndicator then
 		controls.showVisualIndicator:SetChecked(self:GetOption("showVisualIndicator") == true)
 	end
@@ -85,7 +89,9 @@ function NoPoizen:RefreshOptionsWindow()
 		controls.satisfiedAudioVolumeSlider.npUpdating = false
 	end
 	if controls.satisfiedAudioVolumeValue then
-		controls.satisfiedAudioVolumeValue:SetText(string.format("%d%%", math.floor((currentSatisfiedVolume * 100) + 0.5)))
+		controls.satisfiedAudioVolumeValue:SetText(
+			string.format("%d%%", math.floor((currentSatisfiedVolume * 100) + 0.5))
+		)
 	end
 
 	local audioEnabled = self:GetOption("playAudioIndicator") == true
@@ -94,10 +100,20 @@ function NoPoizen:RefreshOptionsWindow()
 	SetSliderEnabled(controls.satisfiedAudioVolumeSlider, satisfiedAudioEnabled)
 end
 
-function NoPoizen:OpenOptionsWindow()
-	if not self.optionsFrame then
-		self:InitializeOptionsWindow()
+function NoPoizen:ApplyOptionsControlValue(optionKey, value)
+	if not self.optionControls or self.optionControls.database ~= self.db then
+		self:RefreshOptionsWindow()
+		return false
 	end
+	return self:SetOption(optionKey, value)
+end
+
+function NoPoizen:OpenOptionsWindow()
+	if self:IsHUDRestricted() then
+		return false
+	end
+	-- Retry registration if Settings was unavailable during ADDON_LOADED.
+	self:InitializeOptionsWindow()
 	if not (Settings and Settings.OpenToCategory and self.optionsCategory and self.optionsCategory.GetID) then
 		return false
 	end
@@ -105,8 +121,37 @@ function NoPoizen:OpenOptionsWindow()
 	return true
 end
 
+function NoPoizen:TryRegisterOptionsCategory()
+	if self.optionsCategory then
+		self.pendingOptionsRegistration = nil
+		return true
+	end
+	self.pendingOptionsRegistration = true
+	if self:IsHUDRestricted() or not self.optionsFrame then
+		return false
+	end
+	if not (Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory) then
+		return false
+	end
+	-- Use the supported canvas registration API; never add fields to its category.
+	local category = Settings.RegisterCanvasLayoutCategory(self.optionsFrame, "NoPoizen")
+	if not category then
+		return false
+	end
+	Settings.RegisterAddOnCategory(category)
+	self.optionsCategory = category
+	self.pendingOptionsRegistration = nil
+	return true
+end
+
 function NoPoizen:InitializeOptionsWindow()
+	self:EnsureHUDLifecycleFrame()
+	if self:IsHUDRestricted() then
+		self.pendingOptionsRegistration = true
+		return
+	end
 	if self.optionsFrame then
+		self:TryRegisterOptionsCategory()
 		return
 	end
 
@@ -121,7 +166,8 @@ function NoPoizen:InitializeOptionsWindow()
 	subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
 	subtitle:SetText("Rogue poison reminder settings.")
 
-	CreateSectionLabel(frame, "Indicators", 16, -74, "GameFontHighlight")
+	local enabled = CreateCheckbox(frame, "enabled", "Enable NoPoizen", nil, 16, -66)
+	CreateSectionLabel(frame, "Indicators", 16, -108, "GameFontHighlight")
 
 	local showVisualIndicator = CreateCheckbox(
 		frame,
@@ -129,7 +175,7 @@ function NoPoizen:InitializeOptionsWindow()
 		"Show visual indicator when poisons are missing",
 		"Show missing poison icons near the center of the screen.",
 		16,
-		-98
+		-132
 	)
 
 	local playAudioIndicator = CreateCheckbox(
@@ -138,12 +184,12 @@ function NoPoizen:InitializeOptionsWindow()
 		"Play audio indicator when poisons are missing",
 		"Play the NoPoizen alert sound once when entering a missing-poison state.",
 		16,
-		-126
+		-160
 	)
 
 	local audioVolumeSlider = CreateFrame("Slider", nil, frame, "OptionsSliderTemplate")
-	audioVolumeSlider:SetPoint("TOPLEFT", frame, "TOPLEFT", 32, -178)
-	audioVolumeSlider:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -48, -178)
+	audioVolumeSlider:SetPoint("TOPLEFT", frame, "TOPLEFT", 32, -212)
+	audioVolumeSlider:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -48, -212)
 	audioVolumeSlider:SetMinMaxValues(self.AUDIO_VOLUME_MIN, self.AUDIO_VOLUME_MAX)
 	audioVolumeSlider:SetValueStep(self.AUDIO_VOLUME_STEP)
 	if audioVolumeSlider.SetObeyStepOnDrag then
@@ -169,21 +215,21 @@ function NoPoizen:InitializeOptionsWindow()
 		if slider.npUpdating then
 			return
 		end
-		NoPoizen:SetOption("audioVolume", normalized)
+		NoPoizen:ApplyOptionsControlValue("audioVolume", normalized)
 	end)
 
 	local playSatisfiedAudioIndicator = CreateCheckbox(
 		frame,
 		"playSatisfiedAudioIndicator",
 		"Play sound when poison requirements are satisfied",
-		"Play hahaha.wav once when transitioning from missing poisons to fully satisfied.",
+		"Play a sound once when transitioning from missing poisons to fully satisfied.",
 		16,
-		-232
+		-266
 	)
 
 	local satisfiedAudioVolumeSlider = CreateFrame("Slider", nil, frame, "OptionsSliderTemplate")
-	satisfiedAudioVolumeSlider:SetPoint("TOPLEFT", frame, "TOPLEFT", 32, -284)
-	satisfiedAudioVolumeSlider:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -48, -284)
+	satisfiedAudioVolumeSlider:SetPoint("TOPLEFT", frame, "TOPLEFT", 32, -318)
+	satisfiedAudioVolumeSlider:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -48, -318)
 	satisfiedAudioVolumeSlider:SetMinMaxValues(self.AUDIO_VOLUME_MIN, self.AUDIO_VOLUME_MAX)
 	satisfiedAudioVolumeSlider:SetValueStep(self.AUDIO_VOLUME_STEP)
 	if satisfiedAudioVolumeSlider.SetObeyStepOnDrag then
@@ -209,10 +255,11 @@ function NoPoizen:InitializeOptionsWindow()
 		if slider.npUpdating then
 			return
 		end
-		NoPoizen:SetOption("satisfiedAudioVolume", normalized)
+		NoPoizen:ApplyOptionsControlValue("satisfiedAudioVolume", normalized)
 	end)
 
 	self.optionControls = {
+		enabled = enabled,
 		showVisualIndicator = showVisualIndicator,
 		playAudioIndicator = playAudioIndicator,
 		audioVolumeSlider = audioVolumeSlider,
@@ -221,6 +268,13 @@ function NoPoizen:InitializeOptionsWindow()
 		satisfiedAudioVolumeSlider = satisfiedAudioVolumeSlider,
 		satisfiedAudioVolumeValue = satisfiedAudioVolumeValue,
 	}
+	CreateSectionLabel(
+		frame,
+		"Move and scale the indicator with /np edit while out of combat.",
+		16,
+		-382,
+		"GameFontHighlightSmall"
+	)
 
 	frame:SetScript("OnShow", function()
 		NoPoizen:RefreshOptionsWindow()
@@ -228,14 +282,6 @@ function NoPoizen:InitializeOptionsWindow()
 
 	self.optionsFrame = frame
 
-	if not (Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory) then
-		self:Print("Settings API is unavailable; addon options could not be registered.")
-		self.optionsCategory = nil
-		return
-	end
-
-	local category = Settings.RegisterCanvasLayoutCategory(frame, frame.name, frame.name)
-	Settings.RegisterAddOnCategory(category)
-	self.optionsCategory = category
+	self:TryRegisterOptionsCategory()
 	self:RefreshOptionsWindow()
 end

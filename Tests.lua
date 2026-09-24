@@ -39,21 +39,81 @@ function NoPoizen:RegisterTest(name, fn)
 	return true
 end
 
-function NoPoizen:RunTests()
+function NoPoizen:RunTests(reverse)
 	local names = {}
 	for name in pairs(self.tests) do
 		table.insert(names, name)
 	end
-	table.sort(names)
-
-	local passed = 0
+	table.sort(names, function(a, b)
+		if reverse then
+			return a > b
+		end
+		return a < b
+	end)
+	local passed, failed = 0, 0
 	for _, name in ipairs(names) do
-		self.tests[name]()
-		passed = passed + 1
+		local ok, err = pcall(self.tests[name])
+		if ok then
+			passed = passed + 1
+		else
+			failed = failed + 1
+			self:Print("FAIL " .. name .. ": " .. self:SafeToString(err))
+		end
 	end
+	self:Print(string.format("Tests complete: %d passed, %d failed", passed, failed))
+	return failed == 0, passed, failed
+end
 
-	self:Print(string.format("Tests complete: %d passed, 0 failed", passed))
-	return true
+-- Every regression operates on a detached addon instance. No live state, frames,
+-- timers, sound, saved variables or Blizzard tables are changed by /np test.
+function NoPoizen:CreateTestFixture()
+	local fixture = {}
+	for key, value in pairs(self) do
+		if type(value) == "function" or type(value) == "number" or type(value) == "string" then
+			fixture[key] = value
+		end
+	end
+	fixture.DEFAULTS = self:DeepCopy(self.DEFAULTS)
+	fixture.DEFAULT_INDICATOR_ANCHOR = self:DeepCopy(self.DEFAULT_INDICATOR_ANCHOR)
+	fixture.db = self:DeepCopy(self.DEFAULTS)
+	fixture.runtimeEvents = self:DeepCopy(self.runtimeEvents)
+	fixture.isEnabled, fixture.hasLoggedIn = true, true
+	fixture.now, fixture.callbacks, fixture.sounds = 10, {}, {}
+	fixture.API = {
+		GetTime = function()
+			return fixture.now
+		end,
+		Delay = function(delay, callback)
+			fixture.callbacks[#fixture.callbacks + 1] = callback
+		end,
+		UnitClass = function()
+			return "Rogue", "ROGUE"
+		end,
+		PlaySoundFile = function(path, channel)
+			fixture.sounds[#fixture.sounds + 1] = { path = path, channel = channel }
+			return true
+		end,
+	}
+	fixture.eventFrame = {
+		RegisterEvent = function()
+			return true
+		end,
+		UnregisterEvent = function() end,
+	}
+	fixture.UpdatePoisonIndicator = function(f, state)
+		f.lastRendered = state
+	end
+	fixture.RefreshPoisonIndicatorVisualState = function() end
+	fixture.EnsurePoisonIndicatorWidget = function() end
+	fixture.EndPoisonIndicatorEditMode = function() end
+	fixture.RefreshOptionsWindow = function() end
+	fixture.ApplySavedIndicatorAnchor = function() end
+	fixture.Print = function(f, message)
+		f.lastPrint = message
+	end
+	fixture.LogDiagnostic = function() end
+	fixture.RecordPoisonObservation = function() end
+	return fixture
 end
 
 NoPoizen:RegisterTest("required counts baseline", function()
@@ -132,24 +192,20 @@ NoPoizen:RegisterTest("audio arming allows playback once armed", function()
 end)
 
 NoPoizen:RegisterTest("indicator rows include both categories when both are missing", function()
-	local rows = NoPoizen.Testables.BuildIndicatorRows(
-		{
-			lethal = {
-				{ spellID = 1, name = "L1", icon = 1 },
-				{ spellID = 2, name = "L2", icon = 2 },
-			},
-			nonLethal = {
-				{ spellID = 3, name = "N1", icon = 3 },
-				{ spellID = 4, name = "N2", icon = 4 },
-			},
+	local rows = NoPoizen.Testables.BuildIndicatorRows({
+		lethal = {
+			{ spellID = 1, name = "L1", icon = 1 },
+			{ spellID = 2, name = "L2", icon = 2 },
 		},
-		{
-			counts = { lethal = 0, nonLethal = 0 },
-			spellIDs = { lethal = {}, nonLethal = {} },
-			names = { lethal = {}, nonLethal = {} },
+		nonLethal = {
+			{ spellID = 3, name = "N1", icon = 3 },
+			{ spellID = 4, name = "N2", icon = 4 },
 		},
-		{ lethal = 1, nonLethal = 1 }
-	)
+	}, {
+		counts = { lethal = 0, nonLethal = 0 },
+		spellIDs = { lethal = {}, nonLethal = {} },
+		names = { lethal = {}, nonLethal = {} },
+	}, { lethal = 1, nonLethal = 1 })
 
 	AssertEquals(#rows, 2, "should contain two rows")
 	AssertEquals(rows[1].category, "lethal", "first row should be lethal")
@@ -159,47 +215,39 @@ NoPoizen:RegisterTest("indicator rows include both categories when both are miss
 end)
 
 NoPoizen:RegisterTest("row disappears when category is fully applied", function()
-	local rows = NoPoizen.Testables.BuildIndicatorRows(
-		{
-			lethal = {
-				{ spellID = 1, name = "L1", icon = 1 },
-			},
-			nonLethal = {
-				{ spellID = 2, name = "N1", icon = 2 },
-				{ spellID = 3, name = "N2", icon = 3 },
-			},
+	local rows = NoPoizen.Testables.BuildIndicatorRows({
+		lethal = {
+			{ spellID = 1, name = "L1", icon = 1 },
 		},
-		{
-			counts = { lethal = 1, nonLethal = 0 },
-			spellIDs = { lethal = { [1] = true }, nonLethal = {} },
-			names = { lethal = { l1 = true }, nonLethal = {} },
+		nonLethal = {
+			{ spellID = 2, name = "N1", icon = 2 },
+			{ spellID = 3, name = "N2", icon = 3 },
 		},
-		{ lethal = 1, nonLethal = 1 }
-	)
+	}, {
+		counts = { lethal = 1, nonLethal = 0 },
+		spellIDs = { lethal = { [1] = true }, nonLethal = {} },
+		names = { lethal = { l1 = true }, nonLethal = {} },
+	}, { lethal = 1, nonLethal = 1 })
 
 	AssertEquals(#rows, 1, "only one row should remain")
 	AssertEquals(rows[1].category, "nonLethal", "remaining row should be nonLethal")
 end)
 
 NoPoizen:RegisterTest("active poison icon is removed from category row", function()
-	local rows = NoPoizen.Testables.BuildIndicatorRows(
-		{
-			lethal = {
-				{ spellID = 1, name = "L1", icon = 1 },
-				{ spellID = 2, name = "L2", icon = 2 },
-				{ spellID = 3, name = "L3", icon = 3 },
-			},
-			nonLethal = {
-				{ spellID = 9, name = "N1", icon = 9 },
-			},
+	local rows = NoPoizen.Testables.BuildIndicatorRows({
+		lethal = {
+			{ spellID = 1, name = "L1", icon = 1 },
+			{ spellID = 2, name = "L2", icon = 2 },
+			{ spellID = 3, name = "L3", icon = 3 },
 		},
-		{
-			counts = { lethal = 1, nonLethal = 0 },
-			spellIDs = { lethal = { [2] = true }, nonLethal = {} },
-			names = { lethal = { l2 = true }, nonLethal = {} },
+		nonLethal = {
+			{ spellID = 9, name = "N1", icon = 9 },
 		},
-		{ lethal = 2, nonLethal = 1 }
-	)
+	}, {
+		counts = { lethal = 1, nonLethal = 0 },
+		spellIDs = { lethal = { [2] = true }, nonLethal = {} },
+		names = { lethal = { l2 = true }, nonLethal = {} },
+	}, { lethal = 2, nonLethal = 1 })
 
 	local lethalRow = FindRowByCategory(rows, "lethal")
 	AssertTrue(lethalRow ~= nil, "lethal row should exist")

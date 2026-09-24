@@ -4,293 +4,156 @@ if not NoPoizen then
 	return
 end
 
-local function EnsurePoisonIndicatorSelection(hostFrame)
-	if not hostFrame or hostFrame.Selection then
-		return hostFrame and hostFrame.Selection or nil
-	end
-	if not EditModeManagerFrame then
-		return nil
-	end
-
-	local selection = CreateFrame("Frame", nil, hostFrame, "EditModeSystemSelectionTemplate")
-	if not selection then
-		return nil
-	end
-
-	selection:SetAllPoints()
-	selection:SetFrameLevel(hostFrame:GetFrameLevel() + 20)
-	selection:EnableMouse(false)
-	selection:Hide()
-	if selection.SetSystem then
-		selection:SetSystem({
-			GetSystemName = function()
-				return "NoPoizen"
-			end,
-		})
-	elseif selection.SetGetLabelTextFunction then
-		selection:SetGetLabelTextFunction(function()
-			return "NoPoizen"
-		end)
-	end
-	if selection.Label then
-		selection.Label:Hide()
-	end
-	selection.UpdateLabelVisibility = function(frame)
-		if frame.Label then
-			frame.Label:Hide()
+-- These wrappers belong to the addon. Tests use private fixtures, never client globals.
+NoPoizen.HUDAPI = {
+	IsRestricted = function()
+		if type(InCombatLockdown) == "function" then
+			local combat = InCombatLockdown()
+			if not NoPoizen:CanAccessValue(combat) or (combat ~= false and combat ~= nil) then
+				return true
+			end
 		end
-		if frame.HorizontalLabel then
-			frame.HorizontalLabel:Hide()
+		if C_RestrictedActions and Enum and Enum.AddOnRestrictionType then
+			for _, name in ipairs({ "Combat", "Encounter", "ChallengeMode", "PvPMatch", "Map" }) do
+				local restrictionType = Enum.AddOnRestrictionType[name]
+				if not NoPoizen:CanAccessValue(restrictionType) then
+					return true
+				end
+				if restrictionType ~= nil then
+					if not NoPoizen:IsFiniteNumber(restrictionType) then
+						return true
+					end
+					if type(C_RestrictedActions.GetAddOnRestrictionState) == "function" then
+						local state = C_RestrictedActions.GetAddOnRestrictionState(restrictionType)
+						if not NoPoizen:IsFiniteNumber(state) or state ~= 0 then
+							return true
+						end
+					elseif type(C_RestrictedActions.IsAddOnRestrictionActive) == "function" then
+						local active = C_RestrictedActions.IsAddOnRestrictionActive(restrictionType)
+						if not NoPoizen:CanAccessValue(active) or active ~= false then
+							return true
+						end
+					end
+				end
+			end
 		end
-		if frame.VerticalLabel then
-			frame.VerticalLabel:Hide()
-		end
-	end
+		return false
+	end,
+}
 
-	hostFrame.Selection = selection
-	return selection
-end
-
-local function SaveDialogPosition(dialog)
-	if not dialog then
-		return
-	end
-	local point, _, relativePoint, offsetX, offsetY = dialog:GetPoint(1)
-	if not point or not relativePoint then
-		return
-	end
-	dialog.qtUserPlaced = {
-		point = point,
-		relativePoint = relativePoint,
-		x = offsetX,
-		y = offsetY,
-	}
-end
-
-local function GetDefaultDialogPoint()
-	-- Keep settings dialog independent from widget scaling/position updates.
-	return "CENTER", UIParent, "CENTER", 380, 0
-end
-
-local function GetPoisonIndicatorEditSession()
-	return NoPoizen.poisonIndicatorEditSession
-end
-
-local function EnsurePoisonIndicatorEditSession()
-	if NoPoizen.poisonIndicatorEditSession then
-		return NoPoizen.poisonIndicatorEditSession
-	end
-
-	NoPoizen.poisonIndicatorEditSession = {
-		saved = {
-			widgetScale = NoPoizen:NormalizeWidgetScale(NoPoizen:GetOption("widgetScale")) or NoPoizen.DEFAULTS.widgetScale,
-			anchor = NoPoizen:DeepCopy(NoPoizen:GetIndicatorAnchor()),
-		},
-		pending = false,
-	}
-	return NoPoizen.poisonIndicatorEditSession
-end
-
-local function SyncEditModeDirtyState()
-	local session = GetPoisonIndicatorEditSession()
-	local pending = session and session.pending or false
-	if not EditModeManagerFrame then
-		return
-	end
-	if pending then
-		if EditModeManagerFrame.SetHasActiveChanges then
-			EditModeManagerFrame:SetHasActiveChanges(true)
-		end
-	elseif EditModeManagerFrame.CheckForSystemActiveChanges then
-		EditModeManagerFrame:CheckForSystemActiveChanges()
-	end
-end
-
-local function IsSnapshotEqual(snapshot)
-	if type(snapshot) ~= "table" then
+function NoPoizen:IsHUDRestricted()
+	-- IsAddOnRestrictionActive always returns false while its change event dispatches.
+	if self.hudRestrictionTransition then
 		return true
 	end
-	local currentScale = NoPoizen:NormalizeWidgetScale(NoPoizen:GetOption("widgetScale")) or NoPoizen.DEFAULTS.widgetScale
-	local currentAnchor = NoPoizen:GetIndicatorAnchor()
-	local savedAnchor = snapshot.anchor or NoPoizen.DEFAULT_INDICATOR_ANCHOR
-	return currentScale == snapshot.widgetScale
-		and currentAnchor.point == savedAnchor.point
-		and currentAnchor.relativePoint == savedAnchor.relativePoint
-		and currentAnchor.x == savedAnchor.x
-		and currentAnchor.y == savedAnchor.y
+	local ok, restricted = pcall(self.HUDAPI.IsRestricted)
+	return not ok or not self:CanAccessValue(restricted) or restricted ~= false
 end
 
-local function IsAtDefaultState()
-	local defaults = NoPoizen.DEFAULTS
-	local anchorDefaults = NoPoizen.DEFAULT_INDICATOR_ANCHOR
-	local currentScale = NoPoizen:NormalizeWidgetScale(NoPoizen:GetOption("widgetScale")) or defaults.widgetScale
-	local currentAnchor = NoPoizen:GetIndicatorAnchor()
-	return currentScale == defaults.widgetScale
-		and currentAnchor.point == anchorDefaults.point
-		and currentAnchor.relativePoint == anchorDefaults.relativePoint
-		and currentAnchor.x == anchorDefaults.x
-		and currentAnchor.y == anchorDefaults.y
+function NoPoizen:CanMutateHUDFrame(frame)
+	if not self:CanAccessTable(frame) then
+		return false
+	end
+	local ok, forbidden = pcall(function()
+		return frame:IsForbidden()
+	end)
+	if not ok or not self:CanAccessValue(forbidden) or forbidden ~= false then
+		return false
+	end
+	local protectedOK, protected = pcall(function()
+		return frame:IsProtected()
+	end)
+	if not protectedOK or not self:CanAccessValue(protected) then
+		return false
+	end
+	-- Only addon-owned frames reach here. A protected frame is never a valid HUD target.
+	-- This also quarantines frames made protected by an unrelated addon.
+	return protected == false
 end
 
-local function UpdateEditSessionPendingState()
-	local session = EnsurePoisonIndicatorEditSession()
-	session.pending = not IsSnapshotEqual(session.saved)
-	if NoPoizen.poisonIndicatorEditDialog then
-		if NoPoizen.poisonIndicatorEditDialog.RevertButton then
-			NoPoizen.poisonIndicatorEditDialog.RevertButton:SetEnabled(session.pending)
+function NoPoizen:HandleHUDLifecycleEvent(frame, eventName, restrictionType, restrictionState)
+	if eventName == "PLAYER_LOGOUT" then
+		self.isLoggingOut = true
+		frame:SetScript("OnUpdate", nil)
+		self:EndPoisonIndicatorEditMode(false)
+		return
+	end
+	if self.isLoggingOut then
+		return
+	end
+	if eventName == "PLAYER_REGEN_DISABLED" or eventName == "ADDON_RESTRICTION_STATE_CHANGED" then
+		self.hudRestrictionTransition = true
+		-- The inactive payload is safe to defer; activating/active/unknown payloads
+		-- close the editor before the restriction begins. Never branch on a secret.
+		local inactive = eventName == "ADDON_RESTRICTION_STATE_CHANGED"
+			and self:CanAccessValue(restrictionState)
+			and type(restrictionState) == "number"
+			and restrictionState == 0
+		if not inactive then
+			self:EndPoisonIndicatorEditMode(false)
 		end
-		if NoPoizen.poisonIndicatorEditDialog.ResetButton then
-			NoPoizen.poisonIndicatorEditDialog.ResetButton:SetEnabled(not IsAtDefaultState())
-		end
 	end
-	SyncEditModeDirtyState()
-end
-
-local function EnsurePoisonIndicatorEditDialog()
-	if NoPoizen.poisonIndicatorEditDialog then
-		return NoPoizen.poisonIndicatorEditDialog
-	end
-	if not EditModeManagerFrame then
-		return nil
-	end
-
-	local dialog = CreateFrame("Frame", "NoPoizenIndicatorSettingsDialog", UIParent)
-	dialog:SetSize(320, 168)
-	dialog:SetFrameStrata("DIALOG")
-	dialog:SetFrameLevel(250)
-	dialog:SetMovable(true)
-	dialog:SetClampedToScreen(true)
-	dialog:EnableMouse(true)
-	dialog:RegisterForDrag("LeftButton")
-	dialog:Hide()
-
-	local border = CreateFrame("Frame", nil, dialog, "DialogBorderTranslucentTemplate")
-	border:SetAllPoints()
-	dialog.Border = border
-
-	local title = dialog:CreateFontString(nil, "ARTWORK", "GameFontHighlightLarge")
-	title:SetPoint("TOP", dialog, "TOP", 0, -15)
-	title:SetText("NoPoizen Indicator")
-	dialog.Title = title
-
-	local closeButton = CreateFrame("Button", nil, dialog, "UIPanelCloseButton")
-	closeButton:SetPoint("TOPRIGHT", dialog, "TOPRIGHT")
-	closeButton:SetScript("OnClick", function()
-		NoPoizen:DeselectPoisonIndicatorAnchor()
-	end)
-	dialog.CloseButton = closeButton
-
-	local dragHandle = CreateFrame("Frame", nil, dialog)
-	dragHandle:SetPoint("TOPLEFT", dialog, "TOPLEFT", 8, -8)
-	dragHandle:SetPoint("TOPRIGHT", closeButton, "TOPLEFT", -4, -8)
-	dragHandle:SetHeight(28)
-	dragHandle:EnableMouse(true)
-	dragHandle:RegisterForDrag("LeftButton")
-	dragHandle:SetScript("OnDragStart", function()
-		dialog:StartMoving()
-	end)
-	dragHandle:SetScript("OnDragStop", function()
-		dialog:StopMovingOrSizing()
-		SaveDialogPosition(dialog)
-	end)
-	dialog.DragHandle = dragHandle
-
-	local slider = CreateFrame("Slider", nil, dialog, "OptionsSliderTemplate")
-	slider:SetPoint("TOPLEFT", dialog, "TOPLEFT", 24, -62)
-	slider:SetPoint("TOPRIGHT", dialog, "TOPRIGHT", -24, -62)
-	slider:SetMinMaxValues(NoPoizen.WIDGET_SCALE_MIN, NoPoizen.WIDGET_SCALE_MAX)
-	slider:SetValueStep(NoPoizen.WIDGET_SCALE_STEP)
-	if slider.SetObeyStepOnDrag then
-		slider:SetObeyStepOnDrag(true)
-	end
-	if slider.Text then
-		slider.Text:SetText("Indicator Scale")
-	end
-	if slider.Low then
-		slider.Low:SetText(string.format("%.1fx", NoPoizen.WIDGET_SCALE_MIN))
-	end
-	if slider.High then
-		slider.High:SetText(string.format("%.1fx", NoPoizen.WIDGET_SCALE_MAX))
-	end
-
-	local sliderValue = dialog:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-	sliderValue:SetPoint("TOP", slider, "BOTTOM", 0, -4)
-	sliderValue:SetText("")
-	dialog.ScaleValueText = sliderValue
-	dialog.ScaleSlider = slider
-
-	slider:SetScript("OnValueChanged", function(_, value)
-		local normalized = NoPoizen:NormalizeWidgetScale(value) or NoPoizen.DEFAULTS.widgetScale
-		dialog.ScaleValueText:SetText(string.format("%.2fx", normalized))
-		if dialog.qtUpdatingSlider then
+	-- Reconcile next frame, after the restriction event has finished dispatching.
+	-- One replaceable callback avoids timers that survive teardown or stack up.
+	frame:SetScript("OnUpdate", function()
+		frame:SetScript("OnUpdate", nil)
+		if self.isLoggingOut then
 			return
 		end
-		if NoPoizen:SetOption("widgetScale", normalized) and not NoPoizen.poisonIndicatorEditSessionRestoring then
-			UpdateEditSessionPendingState()
-			NoPoizen:AttachPoisonIndicatorEditDialog()
+		self.hudRestrictionTransition = false
+		if self.pendingOptionsRegistration and not self:IsHUDRestricted() then
+			self:InitializeOptionsWindow()
 		end
-	end)
-
-	local revertButton = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
-	revertButton:SetSize(128, 24)
-	revertButton:SetPoint("BOTTOMLEFT", dialog, "BOTTOMLEFT", 24, 18)
-	revertButton:SetText("Revert Changes")
-	revertButton:SetScript("OnClick", function()
-		NoPoizen:RevertPoisonIndicatorEditSession()
-	end)
-	dialog.RevertButton = revertButton
-
-	local resetButton = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
-	resetButton:SetSize(128, 24)
-	resetButton:SetPoint("BOTTOMRIGHT", dialog, "BOTTOMRIGHT", -24, 18)
-	resetButton:SetText("Reset To Default")
-	resetButton:SetScript("OnClick", function()
-		NoPoizen:ResetPoisonIndicatorEditSessionToDefaults()
-	end)
-	dialog.ResetButton = resetButton
-
-	dialog:SetScript("OnDragStart", function(frame)
-		frame:StartMoving()
-	end)
-	dialog:SetScript("OnDragStop", function(frame)
-		frame:StopMovingOrSizing()
-		SaveDialogPosition(frame)
-	end)
-	dialog:SetScript("OnHide", function(frame)
-		frame:StopMovingOrSizing()
-	end)
-	dialog:SetScript("OnKeyDown", function(_, key)
-		if key == "ESCAPE" then
-			NoPoizen:DeselectPoisonIndicatorAnchor()
+		if self.pendingIndicatorAnchor then
+			self:ApplySavedIndicatorAnchor()
 		end
+		self:RefreshPoisonIndicatorVisualState()
 	end)
-
-	NoPoizen.poisonIndicatorEditDialog = dialog
-	return dialog
 end
 
-local function GetDefaultEditModeRows()
-	local rows = {}
-	local poisonCatalog = NoPoizen.poisonCatalog or {}
+function NoPoizen:EnsureHUDLifecycleFrame()
+	if self.hudLifecycleFrame then
+		return
+	end
+	local frame = CreateFrame("Frame")
+	self.hudLifecycleFrame = frame
+	frame:SetScript("OnEvent", function(_, ...)
+		self:HandleHUDLifecycleEvent(frame, ...)
+	end)
+	for _, eventName in ipairs({
+		"PLAYER_REGEN_DISABLED",
+		"PLAYER_REGEN_ENABLED",
+		"ADDON_RESTRICTION_STATE_CHANGED",
+		"PLAYER_LOGOUT",
+	}) do
+		-- Older supported clients may not know newer events; pcall contains registration failure.
+		pcall(frame.RegisterEvent, frame, eventName)
+	end
+end
 
+local function IsSnapshotEqual(owner, snapshot)
+	local anchor = owner:GetIndicatorAnchor()
+	return snapshot.widgetScale == owner:GetOption("widgetScale")
+		and snapshot.anchor.point == anchor.point
+		and snapshot.anchor.relativePoint == anchor.relativePoint
+		and snapshot.anchor.x == anchor.x
+		and snapshot.anchor.y == anchor.y
+end
+
+local function GetDefaultEditModeRows(owner)
+	local rows = {}
 	for _, category in ipairs({ "lethal", "nonLethal" }) do
-		local row = {
-			category = category,
-			icons = {},
-		}
-		for _, spell in ipairs(poisonCatalog[category] or {}) do
-			table.insert(row.icons, {
-				category = category,
-				spellID = spell.spellID,
-				name = spell.fallbackName,
-				icon = (C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(spell.spellID))
-					or (GetSpellTexture and GetSpellTexture(spell.spellID))
-					or 134400,
-			})
+		local row = { category = category, icons = {} }
+		for _, spell in ipairs((owner.poisonCatalog or {})[category] or {}) do
+			-- A static preview does not need to read auras or spell APIs.
+			table.insert(row.icons, { icon = spell.icon or 134400 })
 		end
 		if #row.icons > 0 then
 			table.insert(rows, row)
 		end
+	end
+	if #rows == 0 then
+		rows[1] = { category = "preview", icons = { { icon = 134400 } } }
 	end
 	return rows
 end
@@ -298,57 +161,43 @@ end
 local function GetCategoryLabel(category)
 	if category == "lethal" then
 		return "Lethal Poisons"
-	end
-	if category == "nonLethal" then
+	elseif category == "nonLethal" then
 		return "Non-Lethal Poisons"
+	elseif category == "mainHand" then
+		return "Main Hand"
+	elseif category == "offHand" then
+		return "Off Hand"
 	end
-	return tostring(category)
+	return "NoPoizen"
 end
 
-local function LayoutIndicatorRows(hostFrame, indicatorRows)
-	hostFrame.iconTextures = hostFrame.iconTextures or {}
-	hostFrame.rowLabels = hostFrame.rowLabels or {}
-
-	local iconSize = 40
-	local columnSpacing = 6
-	local rowSpacing = 10
-	local paddingX = 12
-	local paddingY = 10
-	local labelGap = 2
-	local textureIndex = 0
-	local maxColumns = 0
-
-	for _, row in ipairs(indicatorRows) do
+local function LayoutIndicatorRows(hostFrame, rows)
+	local iconSize, columnSpacing, rowSpacing, padding = 40, 6, 10, 12
+	local textureIndex, maxColumns, cursorY = 0, 0, 10
+	for _, row in ipairs(rows) do
 		maxColumns = math.max(maxColumns, #(row.icons or {}))
 	end
-
-	local width = math.max(1, (maxColumns * iconSize) + (math.max(0, maxColumns - 1) * columnSpacing) + (paddingX * 2))
-	local cursorY = paddingY
-
-	for rowIndex, row in ipairs(indicatorRows) do
-		if not hostFrame.rowLabels[rowIndex] then
-			hostFrame.rowLabels[rowIndex] = hostFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	local width = math.max(1, maxColumns * iconSize + math.max(0, maxColumns - 1) * columnSpacing + padding * 2)
+	for rowIndex, row in ipairs(rows) do
+		local label = hostFrame.rowLabels[rowIndex]
+		if not label then
+			label = hostFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+			hostFrame.rowLabels[rowIndex] = label
 		end
-		local rowLabel = hostFrame.rowLabels[rowIndex]
-		rowLabel:ClearAllPoints()
-		rowLabel:SetPoint("TOP", hostFrame, "TOP", 0, -cursorY)
-		rowLabel:SetText(GetCategoryLabel(row.category))
-		rowLabel:Show()
-
-		local labelHeight = rowLabel:GetStringHeight() or 12
-		cursorY = cursorY + labelHeight + labelGap
-
-		local rowIconCount = #(row.icons or {})
-		local rowWidth = (rowIconCount * iconSize) + (math.max(0, rowIconCount - 1) * columnSpacing)
-		local rowStartX = (width - rowWidth) / 2
-
+		label:ClearAllPoints()
+		label:SetPoint("TOP", hostFrame, "TOP", 0, -cursorY)
+		label:SetText(GetCategoryLabel(row.category))
+		label:Show()
+		cursorY = cursorY + (label:GetStringHeight() or 12) + 2
+		local count = #(row.icons or {})
+		local startX = (width - count * iconSize - math.max(0, count - 1) * columnSpacing) / 2
 		for columnIndex, iconData in ipairs(row.icons or {}) do
 			textureIndex = textureIndex + 1
-			if not hostFrame.iconTextures[textureIndex] then
-				hostFrame.iconTextures[textureIndex] = hostFrame:CreateTexture(nil, "ARTWORK")
-			end
-
 			local texture = hostFrame.iconTextures[textureIndex]
+			if not texture then
+				texture = hostFrame:CreateTexture(nil, "ARTWORK")
+				hostFrame.iconTextures[textureIndex] = texture
+			end
 			texture:SetTexture(iconData.icon or 134400)
 			texture:SetSize(iconSize, iconSize)
 			texture:ClearAllPoints()
@@ -356,37 +205,28 @@ local function LayoutIndicatorRows(hostFrame, indicatorRows)
 				"TOPLEFT",
 				hostFrame,
 				"TOPLEFT",
-				rowStartX + ((columnIndex - 1) * (iconSize + columnSpacing)),
+				startX + (columnIndex - 1) * (iconSize + columnSpacing),
 				-cursorY
 			)
 			texture:Show()
 		end
-
-		cursorY = cursorY + iconSize
-		if rowIndex < #indicatorRows then
-			cursorY = cursorY + rowSpacing
-		end
+		cursorY = cursorY + iconSize + (rowIndex < #rows and rowSpacing or 0)
 	end
-
 	for index = textureIndex + 1, #hostFrame.iconTextures do
-		if hostFrame.iconTextures[index] then
-			hostFrame.iconTextures[index]:Hide()
-		end
+		hostFrame.iconTextures[index]:Hide()
 	end
-
-	for index = #indicatorRows + 1, #hostFrame.rowLabels do
-		if hostFrame.rowLabels[index] then
-			hostFrame.rowLabels[index]:Hide()
-		end
+	for index = #rows + 1, #hostFrame.rowLabels do
+		hostFrame.rowLabels[index]:Hide()
 	end
-
-	local rowCount = #indicatorRows
-	local height = rowCount > 0 and (cursorY + paddingY) or 1
-	hostFrame:SetSize(width, height)
+	hostFrame:SetSize(width, #rows > 0 and cursorY + 10 or 1)
 end
 
 function NoPoizen:IsPoisonIndicatorInEditMode()
-	return self.isEnabled and EditModeManagerFrame and EditModeManagerFrame:IsShown()
+	return self.isEnabled == true
+		and self.poisonIndicatorEditActive == true
+		and self.poisonIndicatorEditSession ~= nil
+		and self.poisonIndicatorEditSession.database == self.db
+		and not self:IsHUDRestricted()
 end
 
 function NoPoizen:ApplySavedIndicatorAnchor()
@@ -394,27 +234,23 @@ function NoPoizen:ApplySavedIndicatorAnchor()
 	if not hostFrame then
 		return
 	end
+	if not self:CanMutateHUDFrame(hostFrame) then
+		self.pendingIndicatorAnchor = true
+		return
+	end
+	self.pendingIndicatorAnchor = nil
 	local anchor = self:GetIndicatorAnchor()
 	hostFrame:ClearAllPoints()
-	hostFrame:SetPoint(anchor.point, hostFrame:GetParent() or UIParent, anchor.relativePoint, anchor.x, anchor.y)
-	if self.poisonIndicatorEditDialog and self.poisonIndicatorEditDialog:IsShown() then
-		self:AttachPoisonIndicatorEditDialog()
-	end
+	hostFrame:SetPoint(anchor.point, UIParent, anchor.relativePoint, anchor.x, anchor.y)
 end
 
 function NoPoizen:SaveIndicatorAnchorFromFrame(hostFrame)
-	if not hostFrame then
+	if not self:IsPoisonIndicatorInEditMode() or not self:CanMutateHUDFrame(hostFrame) then
 		return false
 	end
 	local point, _, relativePoint, x, y = hostFrame:GetPoint(1)
-	if not point or not relativePoint then
-		return false
-	end
 	local changed = self:SetIndicatorAnchor(point, relativePoint, x, y)
-	if changed and self:IsPoisonIndicatorInEditMode() and not self.poisonIndicatorEditSessionRestoring then
-		UpdateEditSessionPendingState()
-		self:RefreshPoisonIndicatorEditDialog()
-	end
+	self:RefreshPoisonIndicatorEditDialog()
 	return changed
 end
 
@@ -422,289 +258,260 @@ function NoPoizen:EnsurePoisonIndicatorWidget()
 	if self.poisonIndicatorHostFrame then
 		return self.poisonIndicatorHostFrame
 	end
-
-	local parentFrame = UIParent or (C_UI and C_UI.GetUIParent and C_UI.GetUIParent()) or nil
-	if not parentFrame then
+	if not self.isEnabled or not UIParent or self:IsHUDRestricted() then
 		return nil
 	end
-
-	local hostFrame = CreateFrame("Frame", "NoPoizenIndicatorAnchor", parentFrame)
+	self:EnsureHUDLifecycleFrame()
+	local hostFrame = CreateFrame("Frame", "NoPoizenIndicatorAnchor", UIParent)
 	hostFrame:SetSize(1, 1)
 	hostFrame:SetFrameStrata("MEDIUM")
-	hostFrame:SetFrameLevel(parentFrame:GetFrameLevel() + 1)
 	hostFrame:SetClampedToScreen(true)
 	hostFrame:SetMovable(true)
 	hostFrame:RegisterForDrag("LeftButton")
 	hostFrame:EnableMouse(false)
-
+	hostFrame.iconTextures, hostFrame.rowLabels = {}, {}
 	local background = hostFrame:CreateTexture(nil, "BACKGROUND")
 	background:SetAllPoints()
 	background:SetColorTexture(0.03, 0.03, 0.03, 0.7)
 	background:Hide()
 	hostFrame.EditBackground = background
-
-	local border = hostFrame:CreateTexture(nil, "BORDER")
-	border:SetAllPoints()
-	border:SetColorTexture(0.8, 0.2, 0.2, 0.4)
-	border:Hide()
-	hostFrame.EditBorder = border
-
 	local label = hostFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	label:SetPoint("BOTTOM", hostFrame, "TOP", 0, 6)
-	label:SetText("NoPoizen")
+	label:SetText("NoPoizen: drag to move")
 	label:Hide()
 	hostFrame.EditLabel = label
-
-	hostFrame:SetScript("OnMouseDown", function(_, button)
-		if button ~= "LeftButton" then
-			return
-		end
-		NoPoizen:SelectPoisonIndicatorAnchor()
-	end)
 	hostFrame:SetScript("OnDragStart", function(frame)
-		if not NoPoizen:IsPoisonIndicatorInEditMode() then
-			return
+		if self:IsPoisonIndicatorInEditMode() and self:CanMutateHUDFrame(frame) then
+			frame:StartMoving()
 		end
-		NoPoizen:SelectPoisonIndicatorAnchor()
-		frame:StartMoving()
 	end)
 	hostFrame:SetScript("OnDragStop", function(frame)
-		frame:StopMovingOrSizing()
-		NoPoizen:SaveIndicatorAnchorFromFrame(frame)
-		NoPoizen:AttachPoisonIndicatorEditDialog()
+		if self:CanMutateHUDFrame(frame) then
+			frame:StopMovingOrSizing()
+			-- Ignore a drag callback left over from a cancelled/disabled edit session.
+			self:SaveIndicatorAnchorFromFrame(frame)
+		end
 	end)
-
+	hostFrame:Hide()
 	self.poisonIndicatorHostFrame = hostFrame
 	self:ApplySavedIndicatorAnchor()
-	self:RefreshPoisonIndicatorVisualState()
 	return hostFrame
 end
 
-function NoPoizen:ApplyPoisonIndicatorEditSnapshot(snapshot)
-	if type(snapshot) ~= "table" then
+local function EnsureEditDialog(owner)
+	if owner.poisonIndicatorEditDialog then
+		return owner.poisonIndicatorEditDialog
+	end
+	if owner:IsHUDRestricted() then
+		return nil
+	end
+	local dialog = CreateFrame("Frame", "NoPoizenIndicatorSettingsDialog", UIParent)
+	dialog:SetSize(360, 216)
+	dialog:SetPoint("CENTER", UIParent, "CENTER", 330, 0)
+	dialog:SetFrameStrata("DIALOG")
+	dialog:SetClampedToScreen(true)
+	dialog:EnableMouse(true)
+	dialog:Hide()
+	local background = dialog:CreateTexture(nil, "BACKGROUND")
+	background:SetAllPoints()
+	background:SetColorTexture(0.06, 0.06, 0.06, 0.96)
+	local title = dialog:CreateFontString(nil, "ARTWORK", "GameFontHighlightLarge")
+	title:SetPoint("TOP", 0, -16)
+	title:SetText("NoPoizen Position and Scale")
+	local hint = dialog:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+	hint:SetPoint("TOP", title, "BOTTOM", 0, -10)
+	hint:SetText("Drag the indicator, then save your changes.")
+	local slider = CreateFrame("Slider", nil, dialog, "OptionsSliderTemplate")
+	slider:SetPoint("TOPLEFT", 24, -84)
+	slider:SetPoint("TOPRIGHT", -24, -84)
+	slider:SetMinMaxValues(owner.WIDGET_SCALE_MIN, owner.WIDGET_SCALE_MAX)
+	slider:SetValueStep(owner.WIDGET_SCALE_STEP)
+	if slider.SetObeyStepOnDrag then
+		slider:SetObeyStepOnDrag(true)
+	end
+	if slider.Text then
+		slider.Text:SetText("Indicator Scale")
+	end
+	if slider.Low then
+		slider.Low:SetText(string.format("%.1fx", owner.WIDGET_SCALE_MIN))
+	end
+	if slider.High then
+		slider.High:SetText(string.format("%.1fx", owner.WIDGET_SCALE_MAX))
+	end
+	local valueText = dialog:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	valueText:SetPoint("TOP", slider, "BOTTOM", 0, -4)
+	dialog.ScaleSlider, dialog.ScaleValueText = slider, valueText
+	slider:SetScript("OnValueChanged", function(_, value)
+		if dialog.updatingSlider or not owner:IsPoisonIndicatorInEditMode() then
+			return
+		end
+		local normalized = owner:NormalizeWidgetScale(value)
+		if normalized then
+			owner:SetOption("widgetScale", normalized)
+			owner:RefreshPoisonIndicatorEditDialog()
+		end
+	end)
+	local function AddButton(text, x, y, callback)
+		local button = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
+		button:SetSize(148, 24)
+		button:SetPoint("BOTTOMLEFT", x, y)
+		button:SetText(text)
+		button:SetScript("OnClick", callback)
+		return button
+	end
+	dialog.RevertButton = AddButton("Revert Changes", 24, 52, function()
+		owner:RevertPoisonIndicatorEditSession()
+	end)
+	AddButton("Reset To Default", 188, 52, function()
+		owner:ResetPoisonIndicatorEditSessionToDefaults()
+	end)
+	AddButton("Save", 24, 18, function()
+		owner:EndPoisonIndicatorEditMode(true)
+	end)
+	AddButton("Cancel", 188, 18, function()
+		owner:EndPoisonIndicatorEditMode(false)
+	end)
+	dialog:SetScript("OnHide", function()
+		if owner.poisonIndicatorEditActive then
+			owner:EndPoisonIndicatorEditMode(false)
+		end
+	end)
+	owner.poisonIndicatorEditDialog = dialog
+	return dialog
+end
+
+function NoPoizen:RefreshPoisonIndicatorEditDialog()
+	local dialog = self.poisonIndicatorEditDialog
+	if not dialog or not self:CanMutateHUDFrame(dialog) then
 		return
 	end
-	self.poisonIndicatorEditSessionRestoring = true
-	if snapshot.widgetScale then
-		self:SetOption("widgetScale", snapshot.widgetScale)
-	end
-	if snapshot.anchor then
-		self:SetIndicatorAnchor(snapshot.anchor.point, snapshot.anchor.relativePoint, snapshot.anchor.x, snapshot.anchor.y)
-	end
-	self.poisonIndicatorEditSessionRestoring = false
+	local scale = self:NormalizeWidgetScale(self:GetOption("widgetScale")) or self.DEFAULTS.widgetScale
+	dialog.updatingSlider = true
+	dialog.ScaleSlider:SetValue(scale)
+	dialog.ScaleValueText:SetText(string.format("%.2fx", scale))
+	dialog.updatingSlider = false
+	local session = self.poisonIndicatorEditSession
+	dialog.RevertButton:SetEnabled(session ~= nil and not IsSnapshotEqual(self, session.saved))
+end
 
+function NoPoizen:ApplyPoisonIndicatorEditSnapshot(snapshot)
+	if not snapshot then
+		return
+	end
+	self:SetOption("widgetScale", snapshot.widgetScale)
+	self:SetIndicatorAnchor(snapshot.anchor.point, snapshot.anchor.relativePoint, snapshot.anchor.x, snapshot.anchor.y)
+	-- A cancelled drag may move the frame before its anchor reaches saved variables.
+	self:ApplySavedIndicatorAnchor()
 	self:RefreshPoisonIndicatorVisualState()
-	self:AttachPoisonIndicatorEditDialog()
 	self:RefreshPoisonIndicatorEditDialog()
 end
 
-function NoPoizen:CommitPoisonIndicatorEditSession()
-	self.poisonIndicatorEditSession = nil
-	self.poisonIndicatorEditSessionRestoring = false
-	SyncEditModeDirtyState()
-	if self.poisonIndicatorEditDialog and self.poisonIndicatorEditDialog.RevertButton then
-		self.poisonIndicatorEditDialog.RevertButton:SetEnabled(false)
-	end
-end
-
 function NoPoizen:RevertPoisonIndicatorEditSession()
-	local session = GetPoisonIndicatorEditSession()
-	if not session then
-		return
-	end
-	self:ApplyPoisonIndicatorEditSnapshot(session.saved)
-	session.pending = false
-	SyncEditModeDirtyState()
-	if self.poisonIndicatorEditDialog and self.poisonIndicatorEditDialog.RevertButton then
-		self.poisonIndicatorEditDialog.RevertButton:SetEnabled(false)
+	if self:IsPoisonIndicatorInEditMode() and self.poisonIndicatorEditSession then
+		self:ApplyPoisonIndicatorEditSnapshot(self.poisonIndicatorEditSession.saved)
 	end
 end
 
 function NoPoizen:ResetPoisonIndicatorEditSessionToDefaults()
-	self.poisonIndicatorEditSessionRestoring = true
-	self:SetOption("widgetScale", self.DEFAULTS.widgetScale)
-	self:ResetIndicatorAnchor()
-	self.poisonIndicatorEditSessionRestoring = false
-	UpdateEditSessionPendingState()
-	self:RefreshPoisonIndicatorVisualState()
-	self:AttachPoisonIndicatorEditDialog()
-	self:RefreshPoisonIndicatorEditDialog()
-end
-
-function NoPoizen:AttachPoisonIndicatorEditDialog()
-	local dialog = self.poisonIndicatorEditDialog
-	if not dialog then
-		return
-	end
-
-	if dialog.qtUserPlaced then
-		dialog:ClearAllPoints()
-		dialog:SetPoint(
-			dialog.qtUserPlaced.point,
-			UIParent,
-			dialog.qtUserPlaced.relativePoint,
-			dialog.qtUserPlaced.x,
-			dialog.qtUserPlaced.y
-		)
-		return
-	end
-
-	local point, relativeTo, relativePoint, offsetX, offsetY = GetDefaultDialogPoint()
-	dialog:ClearAllPoints()
-	dialog:SetPoint(point, relativeTo, relativePoint, offsetX, offsetY)
-end
-
-function NoPoizen:RefreshPoisonIndicatorEditDialog()
-	local dialog = EnsurePoisonIndicatorEditDialog()
-	if not dialog then
-		return
-	end
-	local session = GetPoisonIndicatorEditSession()
-
-	local currentScale = self:NormalizeWidgetScale(self:GetOption("widgetScale")) or self.DEFAULTS.widgetScale
-	dialog.qtUpdatingSlider = true
-	dialog.ScaleSlider:SetValue(currentScale)
-	dialog.ScaleValueText:SetText(string.format("%.2fx", currentScale))
-	dialog.qtUpdatingSlider = false
-
-	if dialog.RevertButton then
-		dialog.RevertButton:SetEnabled(session and session.pending or false)
-	end
-	if dialog.ResetButton then
-		dialog.ResetButton:SetEnabled(not IsAtDefaultState())
-	end
-end
-
-function NoPoizen:SelectPoisonIndicatorAnchor()
 	if not self:IsPoisonIndicatorInEditMode() then
 		return
 	end
-
-	EnsurePoisonIndicatorEditSession()
-	self.poisonIndicatorAnchorSelected = true
+	self:SetOption("widgetScale", self.DEFAULTS.widgetScale)
+	self:ResetIndicatorAnchor()
 	self:RefreshPoisonIndicatorVisualState()
-	self:AttachPoisonIndicatorEditDialog()
 	self:RefreshPoisonIndicatorEditDialog()
+end
 
-	local dialog = EnsurePoisonIndicatorEditDialog()
-	if dialog then
-		dialog:Show()
+function NoPoizen:BeginPoisonIndicatorEditMode()
+	if not self.isEnabled or self.isLoadingScreenActive or self.isLoggingOut or self:IsHUDRestricted() then
+		return false
+	end
+	local hostFrame = self:EnsurePoisonIndicatorWidget()
+	if not self:CanMutateHUDFrame(hostFrame) then
+		return false
+	end
+	local dialog = EnsureEditDialog(self)
+	if not self:CanMutateHUDFrame(dialog) then
+		return false
+	end
+	if self.poisonIndicatorEditSession and self.poisonIndicatorEditSession.database ~= self.db then
+		self:EndPoisonIndicatorEditMode(false)
+	end
+	if not self.poisonIndicatorEditSession then
+		self.poisonIndicatorEditSession = {
+			database = self.db,
+			saved = {
+				widgetScale = self:GetOption("widgetScale"),
+				anchor = self:DeepCopy(self:GetIndicatorAnchor()),
+			},
+		}
+	end
+	self.poisonIndicatorEditActive = true
+	self:RefreshPoisonIndicatorVisualState()
+	self:RefreshPoisonIndicatorEditDialog()
+	dialog:Show()
+	return true
+end
+
+function NoPoizen:EndPoisonIndicatorEditMode(save)
+	local session = self.poisonIndicatorEditSession
+	self.poisonIndicatorEditActive = false
+	self.poisonIndicatorEditSession = nil
+	local hostFrame = self.poisonIndicatorHostFrame
+	if self:CanMutateHUDFrame(hostFrame) then
+		hostFrame:StopMovingOrSizing()
+	end
+	if self:CanMutateHUDFrame(self.poisonIndicatorEditDialog) then
+		self.poisonIndicatorEditDialog:Hide()
+	end
+	if session and session.database ~= self.db then
+		-- A stale callback must not save or roll back settings in a different DB.
+		-- Cancel only the preview belonging to the original session.
+		session.database.widgetScale = session.saved.widgetScale
+		session.database.indicatorAnchor = self:DeepCopy(session.saved.anchor)
+		self:ApplySavedIndicatorAnchor()
+		self:RefreshPoisonIndicatorVisualState()
+	elseif session and not save then
+		self:ApplyPoisonIndicatorEditSnapshot(session.saved)
+	else
+		self:RefreshPoisonIndicatorVisualState()
 	end
 end
 
 function NoPoizen:DeselectPoisonIndicatorAnchor()
-	self.poisonIndicatorAnchorSelected = false
-	if self.poisonIndicatorEditDialog then
-		self.poisonIndicatorEditDialog:Hide()
-	end
-	self:RefreshPoisonIndicatorVisualState()
+	self:EndPoisonIndicatorEditMode(false)
 end
 
 function NoPoizen:RefreshPoisonIndicatorVisualState()
-	local hostFrame = self:EnsurePoisonIndicatorWidget()
-	if not hostFrame then
+	local hostFrame = self.poisonIndicatorHostFrame
+	if not hostFrame and self.isEnabled and not self.isLoadingScreenActive then
+		hostFrame = self:EnsurePoisonIndicatorWidget()
+	end
+	if not self:CanMutateHUDFrame(hostFrame) then
 		return
 	end
-
-	EnsurePoisonIndicatorSelection(hostFrame)
-	local editModeActive = self:IsPoisonIndicatorInEditMode()
+	local editing = self:IsPoisonIndicatorInEditMode()
 	local state = self.currentPoisonState or {}
-	local shouldShowRuntime = self.isEnabled and state.showIndicator
-	local indicatorRows = state.indicatorRows or {}
-
-	if editModeActive and #indicatorRows == 0 then
-		indicatorRows = GetDefaultEditModeRows()
+	local rows = state.indicatorRows or {}
+	if editing then
+		rows = GetDefaultEditModeRows(self)
 	end
-
-	local shouldShow = editModeActive or shouldShowRuntime
-	if shouldShow and #indicatorRows == 0 then
-		shouldShow = false
-	end
-
-	if shouldShow then
-		LayoutIndicatorRows(hostFrame, indicatorRows)
+	local visible = not self.isLoadingScreenActive
+		and (editing or (self.isEnabled and state.showIndicator))
+		and #rows > 0
+	if visible then
+		LayoutIndicatorRows(hostFrame, rows)
 		hostFrame:SetScale(self:NormalizeWidgetScale(self:GetOption("widgetScale")) or self.DEFAULTS.widgetScale)
 		hostFrame:Show()
 	else
 		hostFrame:Hide()
 	end
-
-	hostFrame:EnableMouse(editModeActive)
-	if hostFrame.EditBackground then
-		hostFrame.EditBackground:SetShown(editModeActive and shouldShow)
-	end
-	if hostFrame.EditBorder then
-		hostFrame.EditBorder:SetShown(editModeActive and shouldShow)
-	end
-	if hostFrame.EditLabel then
-		hostFrame.EditLabel:SetShown(editModeActive and shouldShow)
-	end
-
-	if hostFrame.Selection then
-		if editModeActive and shouldShow then
-			if self.poisonIndicatorAnchorSelected then
-				hostFrame.Selection:ShowSelected()
-			else
-				hostFrame.Selection:ShowHighlighted()
-			end
-		else
-			hostFrame.Selection:Hide()
-		end
-	end
-
-	if not editModeActive then
-		self.poisonIndicatorAnchorSelected = false
-		if self.poisonIndicatorEditDialog then
-			self.poisonIndicatorEditDialog:Hide()
-		end
-	end
+	hostFrame:EnableMouse(editing)
+	hostFrame.EditBackground:SetShown(editing and visible)
+	hostFrame.EditLabel:SetShown(editing and visible)
 end
 
 function NoPoizen:UpdatePoisonIndicator(state)
 	self.currentPoisonState = state
 	self:RefreshPoisonIndicatorVisualState()
-end
-
-function NoPoizen:TryInstallPoisonIndicatorEditModeHooks()
-	if self.poisonIndicatorEditModeHooksInstalled then
-		return
-	end
-	if not EditModeManagerFrame or not EditModeManagerFrame.HookScript then
-		return
-	end
-
-	self:EnsurePoisonIndicatorWidget()
-	EnsurePoisonIndicatorEditDialog()
-
-	EditModeManagerFrame:HookScript("OnShow", function()
-		EnsurePoisonIndicatorEditSession()
-		NoPoizen:RefreshPoisonIndicatorVisualState()
-		NoPoizen:RefreshPoisonIndicatorEditDialog()
-	end)
-	EditModeManagerFrame:HookScript("OnHide", function()
-		NoPoizen:DeselectPoisonIndicatorAnchor()
-	end)
-
-	hooksecurefunc(EditModeManagerFrame, "SelectSystem", function(_, systemFrame)
-		local hostFrame = NoPoizen.poisonIndicatorHostFrame
-		if hostFrame and systemFrame ~= hostFrame then
-			NoPoizen:DeselectPoisonIndicatorAnchor()
-		end
-	end)
-	hooksecurefunc(EditModeManagerFrame, "ClearSelectedSystem", function()
-		NoPoizen:DeselectPoisonIndicatorAnchor()
-	end)
-	hooksecurefunc(EditModeManagerFrame, "SaveLayouts", function()
-		NoPoizen:CommitPoisonIndicatorEditSession()
-	end)
-	hooksecurefunc(EditModeManagerFrame, "RevertAllChanges", function()
-		NoPoizen:RevertPoisonIndicatorEditSession()
-	end)
-	if EditModeManagerFrame.RevertAllChangesButton and EditModeManagerFrame.RevertAllChangesButton.HookScript then
-		EditModeManagerFrame.RevertAllChangesButton:HookScript("OnClick", function()
-			NoPoizen:RevertPoisonIndicatorEditSession()
-		end)
-	end
-
-	self.poisonIndicatorEditModeHooksInstalled = true
 end
