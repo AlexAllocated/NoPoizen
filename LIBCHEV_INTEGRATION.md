@@ -1,6 +1,6 @@
 # Shared library integration
 
-NoPoizen privately embeds **libchev 1.1.0**, pinned to immutable commit [`1f2cd0eaabb692fd0befd51dbdadeb7e07beb3c6`](https://github.com/AlexAllocated/libchev/commit/1f2cd0eaabb692fd0befd51dbdadeb7e07beb3c6). The vendored bytes and SHA-256 manifest live in `Libs/libchev/`; the loader binds `namespace.LibChev`. There is no global library registry or compatibility alias.
+NoPoizen privately embeds **libchev 1.1.1**, pinned to immutable commit [`2feea04bab60ba1c1b91bd01ab8a58ce02e091a9`](https://github.com/AlexAllocated/libchev/commit/2feea04bab60ba1c1b91bd01ab8a58ce02e091a9). The vendored bytes and SHA-256 manifest live in `Libs/libchev/`; the loader binds `namespace.LibChev`. There is no global library registry or compatibility alias.
 
 ## Shared behavior and addon policy
 
@@ -16,9 +16,15 @@ The consumer adapter supplies a private dynamic history store, version/environme
 - Retail and Forever offline startup/UI/lifecycle simulations pass under both interpreters. Actual slash dispatch and console buttons exercise current results, reuse after diagnostics, shared controls, category/search behavior, visible ALL preservation, failure details, and restricted chat fallback.
 - Headless runs create no frames and preserve live history identity/content/sequence/drop counters, UI text, saved database/state identities, timers, and audio calls. Presented runs intentionally replace TEST history in the private console.
 - All 20 Lua files parse under both interpreters; all 18 TOC paths resolve in order and exclude offline scripts. Consumer formatting and diff whitespace checks pass.
-- Upstream `vendor.py --check` and packaging validate the immutable manifest and compare all six payloads to the upstream commit. The installable ZIP includes 63 runtime/package files; three packaging regressions check reproducibility, missing sounds, and tampered library rejection.
+- Upstream `vendor.py --check` and packaging validate the immutable manifest and compare all six payloads to the upstream commit. The installable ZIP includes 63 runtime/package files; three packaging regressions and one runtime-source regression check reproducibility, missing sounds, and tampered library rejection.
 
-Runtime library load order is `libchev.lua`, `Debug.lua`, `DebugWindow.lua`, `ReportWindow.lua`, and `SelfTests.lua`, before consumer code. Update only with the upstream vendor script and a reviewed immutable revision; never edit embedded files. CI uses the same revision for independent source verification. Prepared addon version: `1.1.0-beta.2`; publication waits for the coordinated release gate.
+Runtime library load order is `libchev.lua`, `Debug.lua`, `DebugWindow.lua`, `ReportWindow.lua`, and `SelfTests.lua`, before consumer code. Update only with the upstream vendor script and a reviewed immutable revision; never edit embedded files. CI uses the same revision for independent source verification. Prepared addon version: `1.1.0-beta.3`.
+
+## Forever fixture correction and native console
+
+The in-game suite uses supported infinity constants and invalid primitives instead of zero-division NaN fixtures, which throw on the reported Forever 1.60.1 build 70009. Explicit NaN rejection remains in `scripts/test.lua`, outside the TOC and outside the 123-test in-game count. A source regression rejects literal zero division in all TOC-loaded files. Throwing clocks and successfully returned nonfinite clock values are tested separately.
+
+The shared library supplies native-style artwork on unnamed addon-owned frames and one test summary per run; NoPoizen contains no custom console skin. Offline smoke adapters include the native texture/button methods. This is not fresh in-game rendering or taint validation.
 
 ## Live validation still required
 
