@@ -135,13 +135,14 @@ end)
 
 NoPoizen:RegisterTest("core malformed anchors and nonfinite settings are rejected", function()
 	local f = Fixture()
-	for _, value in ipairs({ false, "broken", math.huge, -math.huge, 0 / 0, {} }) do
+	-- Use constants supported by the game VM; NaN cases live in the offline harness.
+	for _, value in ipairs({ false, "broken", math.huge, -math.huge, {} }) do
 		Equal(f:NormalizeWidgetScale(value), nil)
 		Equal(f:NormalizeAudioVolume(value), nil)
 	end
 	f.db.indicatorAnchor = "corrupt"
 	Equal(f:GetIndicatorAnchor().y, 140)
-	f.db.indicatorAnchor = { point = "MIDDLE", relativePoint = {}, x = 0 / 0, y = 1e99 }
+	f.db.indicatorAnchor = { point = "MIDDLE", relativePoint = {}, x = math.huge, y = 1e99 }
 	Equal(f:GetIndicatorAnchor().point, "CENTER")
 	Equal(f:GetIndicatorAnchor().y, 140)
 	Equal(f:SetIndicatorAnchor("BAD", "CENTER", 0, 0), false)
@@ -315,7 +316,7 @@ NoPoizen:RegisterTest("diagnostics structured histories remain detached between 
 	assert(first.diagnosticLog ~= second.diagnosticLog)
 end)
 
-NoPoizen:RegisterTest("diagnostics clock failures cannot break error reporting", function()
+NoPoizen:RegisterTest("diagnostics throwing and nonfinite clocks preserve error reporting", function()
 	local f = Fixture()
 	f.LogDiagnostic = NoPoizen.LogDiagnostic
 	f.API.GetTime = function()
@@ -324,6 +325,12 @@ NoPoizen:RegisterTest("diagnostics clock failures cannot break error reporting",
 	f:LogDiagnostic("failure", "original failure")
 	Equal(f.diagnosticLog[1].elapsed, nil)
 	Equal(f.diagnosticLog[1].text, "original failure")
+	f.API.GetTime = function()
+		return math.huge
+	end
+	f:LogDiagnostic("failure", "nonfinite clock value")
+	Equal(f.diagnosticLog[2].elapsed, nil)
+	Equal(f.diagnosticLog[2].text, "nonfinite clock value")
 end)
 
 NoPoizen:RegisterTest("diagnostics common header and history use only private adapters", function()

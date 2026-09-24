@@ -31,6 +31,12 @@ for _, name in ipairs({
 	"SetTextColor",
 	"SetAlpha",
 	"SetTexture",
+	"SetHorizTile",
+	"SetVertTile",
+	"SetNormalTexture",
+	"SetPushedTexture",
+	"SetHighlightTexture",
+	"SetBlendMode",
 	"SetColorTexture",
 	"SetScale",
 	"SetFontObject",
@@ -256,7 +262,7 @@ C_UnitAuras = {
 }
 C_AddOns = {
 	GetAddOnMetadata = function()
-		return "1.1.0-beta.2"
+		return "1.1.0-beta.3"
 	end,
 }
 C_Item = {
@@ -398,6 +404,8 @@ local controller = NoPoizen:GetDebugController()
 assert(testWindow:IsShown() and controller.window == testWindow)
 local summary = string.format("Test summary: %d passed, 0 failed (%d total).", passed, passed)
 assert(testWindow.TextBox:GetText():find(summary, 1, true))
+local _, summaryEnd = testWindow.TextBox:GetText():find(summary, 1, true)
+assert(not testWindow.TextBox:GetText():find(summary, summaryEnd + 1, true), "test console must show one summary")
 assert(controller:GetCategory() == "TEST")
 for _, button in ipairs({ "select", "clear", "reload", "tests", "diagnostics", "log" }) do
 	assert(testWindow.Buttons[button], "shared console control missing: " .. button)
