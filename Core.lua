@@ -1,7 +1,9 @@
 local addonName, addonTable = ...
+local LibChev = assert(addonTable and addonTable.LibChev, "libchev must load before Core.lua")
 
-local NoPoizen = _G.NoPoizen or addonTable or {}
+local NoPoizen = addonTable or {}
 _G.NoPoizen = NoPoizen
+NoPoizen.LibChev = LibChev
 
 NoPoizen.addonName = addonName or "NoPoizen"
 NoPoizen.MISSING_SOUND_FILE_PATH = "Interface\\AddOns\\NoPoizen\\nopoizen.wav"
@@ -61,26 +63,102 @@ NoPoizen.runtimeEvents = {
 	"PLAYER_SPECIALIZATION_CHANGED",
 	"TRAIT_CONFIG_UPDATED",
 	"TRAIT_CONFIG_LIST_UPDATED",
+	"PLAYER_REGEN_ENABLED",
+	"PLAYER_ALIVE",
+	"PLAYER_EQUIPMENT_CHANGED",
+	"UNIT_INVENTORY_CHANGED",
+	"ADDON_RESTRICTION_STATE_CHANGED",
 }
 
-NoPoizen.API = NoPoizen.API or {
-	Delay = function(delaySeconds, callbackFn)
-		if C_Timer and C_Timer.After then
-			C_Timer.After(delaySeconds, callbackFn)
+NoPoizen.API = NoPoizen.API
+	or {
+		Delay = function(delaySeconds, callbackFn)
+			if C_Timer and C_Timer.After then
+				C_Timer.After(delaySeconds, callbackFn)
+			end
+		end,
+		GetBuildInfo = function()
+			return GetBuildInfo()
+		end,
+		GetLocale = function()
+			return GetLocale()
+		end,
+		GetAddOnVersion = function(addon)
+			if C_AddOns and C_AddOns.GetAddOnMetadata then
+				return C_AddOns.GetAddOnMetadata(addon, "Version")
+			end
+		end,
+		UnitClass = function(unit)
+			return UnitClass(unit)
+		end,
+		PlaySoundFile = function(path, channel)
+			return PlaySoundFile(path, channel)
+		end,
+		GetTime = function()
+			return GetTime and GetTime() or 0
+		end,
+	}
+
+-- These gates run before comparisons, indexing or formatting foreign values.
+-- pcall contains API errors; it does not make tainted data secure.
+function NoPoizen:CanAccessValue(value)
+	if type(issecretvalue) == "function" then
+		local ok, secret = pcall(issecretvalue, value)
+		if not ok or secret then
+			return false
 		end
-	end,
-	GetTime = function()
-		return GetTime and GetTime() or 0
-	end,
-}
+	end
+	if type(canaccessvalue) == "function" then
+		local ok, accessible = pcall(canaccessvalue, value)
+		if not ok or accessible ~= true then
+			return false
+		end
+	end
+	return true
+end
 
-local function IsNonEmptyString(value)
-	return type(value) == "string" and value ~= ""
+function NoPoizen:CanAccessTable(value)
+	if not self:CanAccessValue(value) or type(value) ~= "table" then
+		return false
+	end
+	if type(canaccesstable) == "function" then
+		local ok, accessible = pcall(canaccesstable, value)
+		if not ok or accessible ~= true then
+			return false
+		end
+	end
+	return true
+end
+
+function NoPoizen:IsFiniteNumber(value)
+	return self:CanAccessValue(value)
+		and type(value) == "number"
+		and value == value
+		and value > -math.huge
+		and value < math.huge
+end
+
+function NoPoizen:ToFiniteNumber(value)
+	if not self:CanAccessValue(value) then
+		return nil
+	end
+	if type(value) ~= "number" and type(value) ~= "string" then
+		return nil
+	end
+	local number = tonumber(value)
+	return self:IsFiniteNumber(number) and number or nil
 end
 
 function NoPoizen:SafeToString(value, fallback)
+	if not self:CanAccessValue(value) then
+		return "<unavailable>"
+	end
 	if value == nil then
 		return fallback or ""
+	end
+	local kind = type(value)
+	if kind ~= "string" and kind ~= "number" and kind ~= "boolean" then
+		return "<" .. kind .. ">"
 	end
 	return tostring(value)
 end
@@ -123,8 +201,11 @@ function NoPoizen:Print(message)
 end
 
 function NoPoizen:GetPlayerClassFile()
-	local _, classFile = UnitClass("player")
-	return classFile
+	local ok, _, classFile = pcall(self.API.UnitClass, "player")
+	if ok and self:CanAccessValue(classFile) and type(classFile) == "string" then
+		return classFile
+	end
+	return nil
 end
 
 function NoPoizen:IsPlayerRogue()
@@ -132,7 +213,7 @@ function NoPoizen:IsPlayerRogue()
 end
 
 function NoPoizen:NormalizeWidgetScale(value)
-	local numberValue = tonumber(value)
+	local numberValue = self:ToFiniteNumber(value)
 	if not numberValue then
 		return nil
 	end
@@ -146,7 +227,7 @@ function NoPoizen:NormalizeWidgetScale(value)
 end
 
 function NoPoizen:NormalizeAudioVolume(value)
-	local numberValue = tonumber(value)
+	local numberValue = self:ToFiniteNumber(value)
 	if not numberValue then
 		return nil
 	end
@@ -164,11 +245,11 @@ function NoPoizen:GetEffectiveAudioVolume(value)
 	if not normalized then
 		normalized = self:NormalizeAudioVolume(self:GetOption("audioVolume")) or self.DEFAULTS.audioVolume
 	end
-	return math.min(1, normalized * 2)
+	return normalized
 end
 
 function NoPoizen:ResetAudioTransitionArming(delaySeconds)
-	local delay = tonumber(delaySeconds)
+	local delay = self:ToFiniteNumber(delaySeconds)
 	if not delay or delay < 0 then
 		delay = self.AUDIO_TRANSITION_ARM_DELAY_SECONDS
 	end
@@ -183,10 +264,19 @@ function NoPoizen:ResetAudioTransitionArming(delaySeconds)
 	self.audioMissingState = false
 	self.audioTransitionsArmed = false
 	self.audioTransitionsArmAt = now + delay
+	LibChev.Advance(self, "audioArmToken")
+	self.API.Delay(
+		delay,
+		LibChev.Fence(self, { "audioArmToken", "postLoadRefreshToken" }, function()
+			if self.isEnabled and not self.isLoggingOut and not self.isLoadingScreenActive then
+				self:RefreshPoisonState("AUDIO_BASELINE")
+			end
+		end)
+	)
 end
 
 function NoPoizen:SchedulePostLoadPoisonRefresh(delaySeconds)
-	local delay = tonumber(delaySeconds)
+	local delay = self:ToFiniteNumber(delaySeconds)
 	if not delay or delay < 0 then
 		delay = self.POST_LOAD_POISON_REFRESH_DELAY_SECONDS
 	end
@@ -199,25 +289,25 @@ function NoPoizen:SchedulePostLoadPoisonRefresh(delaySeconds)
 	end
 
 	self.postLoadRefreshAt = now + delay
-	self.postLoadRefreshToken = (self.postLoadRefreshToken or 0) + 1
-	local scheduledToken = self.postLoadRefreshToken
+	LibChev.Advance(self, "postLoadRefreshToken")
 
+	LibChev.Advance(self, "audioArmToken")
 	-- Arm transition audio no earlier than the first post-loading refresh.
 	self.audioTransitionsArmed = false
 	self.audioTransitionsArmAt = self.postLoadRefreshAt
 
 	if self.API and self.API.Delay then
-		self.API.Delay(delay, function()
-			if scheduledToken ~= self.postLoadRefreshToken then
-				return
-			end
-			if not self.isEnabled or self.isLoadingScreenActive then
-				return
-			end
-			if self.RefreshPoisonState then
-				self:RefreshPoisonState("POST_LOADING_REFRESH")
-			end
-		end)
+		self.API.Delay(
+			delay,
+			LibChev.Fence(self, { "postLoadRefreshToken" }, function()
+				if not self.isEnabled or self.isLoggingOut or self.isLoadingScreenActive then
+					return
+				end
+				if self.RefreshPoisonState then
+					self:RefreshPoisonState("POST_LOADING_REFRESH")
+				end
+			end)
+		)
 	end
 end
 
@@ -230,7 +320,14 @@ function NoPoizen:InitializeDatabase()
 
 	self.db.widgetScale = self:NormalizeWidgetScale(self.db.widgetScale) or self.DEFAULTS.widgetScale
 	self.db.audioVolume = self:NormalizeAudioVolume(self.db.audioVolume) or self.DEFAULTS.audioVolume
-	self.db.satisfiedAudioVolume = self:NormalizeAudioVolume(self.db.satisfiedAudioVolume) or self.DEFAULTS.satisfiedAudioVolume
+	self.db.satisfiedAudioVolume = self:NormalizeAudioVolume(self.db.satisfiedAudioVolume)
+		or self.DEFAULTS.satisfiedAudioVolume
+	for _, key in ipairs({ "enabled", "showVisualIndicator", "playAudioIndicator", "playSatisfiedAudioIndicator" }) do
+		if type(self.db[key]) ~= "boolean" then
+			self.db[key] = self.DEFAULTS[key]
+		end
+	end
+	self.db.indicatorAnchor = self:GetIndicatorAnchor()
 end
 
 function NoPoizen:GetOption(optionKey)
@@ -252,7 +349,10 @@ function NoPoizen:SetOption(optionKey, value)
 		or optionKey == "playSatisfiedAudioIndicator"
 		or optionKey == "enabled"
 	then
-		normalizedValue = value and true or false
+		if not self:CanAccessValue(value) or type(value) ~= "boolean" then
+			return false
+		end
+		normalizedValue = value
 	elseif optionKey == "widgetScale" then
 		normalizedValue = self:NormalizeWidgetScale(value)
 		if not normalizedValue then
@@ -295,13 +395,34 @@ function NoPoizen:SetOption(optionKey, value)
 	return true
 end
 
+local anchorPoints = {
+	TOPLEFT = true,
+	TOP = true,
+	TOPRIGHT = true,
+	LEFT = true,
+	CENTER = true,
+	RIGHT = true,
+	BOTTOMLEFT = true,
+	BOTTOM = true,
+	BOTTOMRIGHT = true,
+}
+
+function NoPoizen:IsAnchorPoint(point)
+	return self:CanAccessValue(point) and type(point) == "string" and anchorPoints[point] == true
+end
+
 function NoPoizen:GetIndicatorAnchor()
-	local anchor = (self.db and self.db.indicatorAnchor) or self.DEFAULT_INDICATOR_ANCHOR
+	local anchor = self.db and self.db.indicatorAnchor
+	if not self:CanAccessTable(anchor) then
+		anchor = self.DEFAULT_INDICATOR_ANCHOR
+	end
+	local x, y = self:ToFiniteNumber(anchor.x), self:ToFiniteNumber(anchor.y)
 	return {
-		point = IsNonEmptyString(anchor.point) and anchor.point or self.DEFAULT_INDICATOR_ANCHOR.point,
-		relativePoint = IsNonEmptyString(anchor.relativePoint) and anchor.relativePoint or self.DEFAULT_INDICATOR_ANCHOR.relativePoint,
-		x = tonumber(anchor.x) or self.DEFAULT_INDICATOR_ANCHOR.x,
-		y = tonumber(anchor.y) or self.DEFAULT_INDICATOR_ANCHOR.y,
+		point = self:IsAnchorPoint(anchor.point) and anchor.point or self.DEFAULT_INDICATOR_ANCHOR.point,
+		relativePoint = self:IsAnchorPoint(anchor.relativePoint) and anchor.relativePoint
+			or self.DEFAULT_INDICATOR_ANCHOR.relativePoint,
+		x = x and math.abs(x) <= 10000 and x or self.DEFAULT_INDICATOR_ANCHOR.x,
+		y = y and math.abs(y) <= 10000 and y or self.DEFAULT_INDICATOR_ANCHOR.y,
 	}
 end
 
@@ -309,12 +430,15 @@ function NoPoizen:SetIndicatorAnchor(point, relativePoint, x, y)
 	if not self.db then
 		return false
 	end
-	if not IsNonEmptyString(point) or not IsNonEmptyString(relativePoint) then
+	if not self:IsAnchorPoint(point) or not self:IsAnchorPoint(relativePoint) then
 		return false
 	end
 
-	local roundedX = tonumber(x) or 0
-	local roundedY = tonumber(y) or 0
+	local roundedX = self:ToFiniteNumber(x)
+	local roundedY = self:ToFiniteNumber(y)
+	if not roundedX or not roundedY or math.abs(roundedX) > 10000 or math.abs(roundedY) > 10000 then
+		return false
+	end
 	if roundedX >= 0 then
 		roundedX = math.floor(roundedX + 0.5)
 	else
@@ -356,144 +480,33 @@ function NoPoizen:ResetIndicatorAnchor()
 	)
 end
 
-function NoPoizen:ForEachHelpfulAura(unitToken, callback)
-	if type(callback) ~= "function" then
-		return
-	end
-
-	if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
-		for auraIndex = 1, 255 do
-			local aura = C_UnitAuras.GetAuraDataByIndex(unitToken, auraIndex, "HELPFUL")
-			if not aura then
-				break
-			end
-			callback(aura.spellId, aura.name, aura.icon)
-		end
-		return
-	end
-
-	if UnitAura then
-		for auraIndex = 1, 40 do
-			local name, icon, _, _, _, _, _, _, _, spellID = UnitAura(unitToken, auraIndex, "HELPFUL")
-			if not name then
-				break
-			end
-			callback(spellID, name, icon)
-		end
-	end
-end
-
-local function ClampZeroToOne(value)
-	local numberValue = tonumber(value) or 0
-	if numberValue < 0 then
-		return 0
-	end
-	if numberValue > 1 then
-		return 1
-	end
-	return numberValue
-end
-
-function NoPoizen:AcquireTemporaryChannelVolume(cvarName, targetVolume)
-	if not cvarName or cvarName == "" or type(SetCVar) ~= "function" then
-		return false
-	end
-
-	self.activeChannelVolumeLocks = self.activeChannelVolumeLocks or {}
-	local lock = self.activeChannelVolumeLocks[cvarName]
-	if not lock then
-		lock = {
-			depth = 0,
-			original = tonumber(GetCVar and GetCVar(cvarName)) or 1,
-		}
-		self.activeChannelVolumeLocks[cvarName] = lock
-	end
-
-	lock.depth = lock.depth + 1
-	local clampedTarget = ClampZeroToOne(targetVolume)
-	SetCVar(cvarName, tostring(clampedTarget))
-	return true
-end
-
-function NoPoizen:ReleaseTemporaryChannelVolume(cvarName)
-	if not cvarName or cvarName == "" or type(SetCVar) ~= "function" then
-		return
-	end
-	if not self.activeChannelVolumeLocks then
-		return
-	end
-
-	local lock = self.activeChannelVolumeLocks[cvarName]
-	if not lock then
-		return
-	end
-
-	lock.depth = (lock.depth or 0) - 1
-	if lock.depth > 0 then
-		return
-	end
-
-	SetCVar(cvarName, tostring(ClampZeroToOne(lock.original)))
-	self.activeChannelVolumeLocks[cvarName] = nil
-end
-
-function NoPoizen:RestoreChannelVolumeAfterPlayback(cvarName, soundHandle)
-	local maxWaitSeconds = 10
-	local pollSeconds = 0.05
-
-	if soundHandle and C_Sound and type(C_Sound.IsPlaying) == "function" and self.API and self.API.GetTime and self.API.Delay then
-		local startTime = self.API.GetTime()
-		local function Poll()
-			local isPlaying = C_Sound.IsPlaying(soundHandle)
-			local elapsed = (self.API.GetTime() or 0) - (startTime or 0)
-			if isPlaying and elapsed < maxWaitSeconds then
-				self.API.Delay(pollSeconds, Poll)
-				return
-			end
-			self:ReleaseTemporaryChannelVolume(cvarName)
-		end
-		self.API.Delay(pollSeconds, Poll)
-		return
-	end
-
-	if self.API and self.API.Delay then
-		self.API.Delay(1.25, function()
-			self:ReleaseTemporaryChannelVolume(cvarName)
-		end)
+-- Custom file playback has no documented volume override. Select pre-attenuated
+-- addon assets instead of changing a shared sound-channel CVar and restoring later.
+function NoPoizen:GetAlertSoundPath(soundFilePath, volume)
+	local stem
+	if soundFilePath == self.MISSING_SOUND_FILE_PATH then
+		stem = "nopoizen"
+	elseif soundFilePath == self.SATISFIED_SOUND_FILE_PATH then
+		stem = "hahaha"
 	else
-		self:ReleaseTemporaryChannelVolume(cvarName)
+		return nil
 	end
+	local normalized = self:NormalizeAudioVolume(volume)
+	if not normalized or normalized <= 0 then
+		return nil
+	end
+	return string.format("Interface\\AddOns\\NoPoizen\\sounds\\%s-%03d.ogg", stem, math.floor(normalized * 100 + 0.5))
 end
 
 function NoPoizen:PlayAlertSound(soundFilePath, volumeOptionKey)
-	if type(soundFilePath) ~= "string" or soundFilePath == "" then
+	local path = self:GetAlertSoundPath(soundFilePath, self:GetEffectiveAudioVolume(self:GetOption(volumeOptionKey)))
+	if not path then
 		return false
 	end
-
-	local volume = self:GetEffectiveAudioVolume(self:GetOption(volumeOptionKey))
-	if volume <= 0 then
-		return false
-	end
-
-	local channel = "Dialog"
-	local channelVolumeCVar = "Sound_DialogVolume"
-	if GetCVar and GetCVar("Sound_EnableDialog") == "0" then
-		channel = "SFX"
-		channelVolumeCVar = "Sound_SFXVolume"
-	end
-
-	if not self:AcquireTemporaryChannelVolume(channelVolumeCVar, volume) then
-		local willPlay = PlaySoundFile(soundFilePath, channel)
-		return willPlay and true or false
-	end
-
-	local willPlay, soundHandle = PlaySoundFile(soundFilePath, channel)
-	if not willPlay then
-		self:ReleaseTemporaryChannelVolume(channelVolumeCVar)
-		return false
-	end
-	self:RestoreChannelVolumeAfterPlayback(channelVolumeCVar, type(soundHandle) == "number" and soundHandle or nil)
-	return true
+	local ok, willPlay = pcall(self.API.PlaySoundFile, path, "Master")
+	local played = ok and self:CanAccessValue(willPlay) and willPlay == true
+	self:LogDiagnostic("audio", played and "played" or "unavailable")
+	return played
 end
 
 function NoPoizen:PlayMissingPoisonSound()
@@ -509,8 +522,19 @@ function NoPoizen:RegisterRuntimeEvents()
 	wipe(self.registeredRuntimeEvents)
 
 	for _, eventName in ipairs(self.runtimeEvents) do
-		self.eventFrame:RegisterEvent(eventName)
-		self.registeredRuntimeEvents[eventName] = true
+		local ok, registered
+		if
+			(eventName == "UNIT_AURA" or eventName == "UNIT_INVENTORY_CHANGED") and self.eventFrame.RegisterUnitEvent
+		then
+			ok, registered = pcall(self.eventFrame.RegisterUnitEvent, self.eventFrame, eventName, "player")
+		else
+			ok, registered = pcall(self.eventFrame.RegisterEvent, self.eventFrame, eventName)
+		end
+		if ok and self:CanAccessValue(registered) and registered == true then
+			self.registeredRuntimeEvents[eventName] = true
+		else
+			self:LogDiagnostic("event-unavailable", eventName)
+		end
 	end
 end
 
@@ -540,17 +564,17 @@ function NoPoizen:Enable()
 	self.isEnabled = true
 	self.isLoadingScreenActive = false
 	self.postLoadRefreshAt = 0
-	self.postLoadRefreshToken = (self.postLoadRefreshToken or 0) + 1
+	LibChev.Advance(self, "postLoadRefreshToken")
 	self:ResetAudioTransitionArming()
 
 	if self.EnsurePoisonIndicatorWidget then
 		self:EnsurePoisonIndicatorWidget()
 	end
-	if self.TryInstallPoisonIndicatorEditModeHooks then
-		self:TryInstallPoisonIndicatorEditModeHooks()
-	end
 	if self.RefreshPoisonState then
 		self:RefreshPoisonState("ENABLE")
+	end
+	if self.TryRegisterEditModeCallbacks then
+		self:TryRegisterEditModeCallbacks()
 	end
 	if self.RefreshPoisonIndicatorVisualState then
 		self:RefreshPoisonIndicatorVisualState()
@@ -564,21 +588,22 @@ function NoPoizen:Disable()
 	end
 	self.db.enabled = false
 
-	if not self.isEnabled then
-		return true
-	end
-
-	self:UnregisterRuntimeEvents()
 	self.isEnabled = false
+	if self.UnregisterEditModeCallbacks then
+		self:UnregisterEditModeCallbacks()
+	end
+	if self.EndPoisonIndicatorEditMode then
+		self:EndPoisonIndicatorEditMode(false)
+	end
+	self.currentPoisonState = nil
+	self:UnregisterRuntimeEvents()
 	self.isLoadingScreenActive = false
 	self.postLoadRefreshAt = 0
-	self.postLoadRefreshToken = (self.postLoadRefreshToken or 0) + 1
+	LibChev.Advance(self, "postLoadRefreshToken")
 	self.audioMissingState = false
 	self.audioTransitionsArmed = false
 	self.audioTransitionsArmAt = 0
-	if self.DeselectPoisonIndicatorAnchor then
-		self:DeselectPoisonIndicatorAnchor()
-	end
+	self.audioBaselinePending = true
 	if self.RefreshPoisonIndicatorVisualState then
 		self:RefreshPoisonIndicatorVisualState()
 	end
@@ -586,14 +611,7 @@ function NoPoizen:Disable()
 end
 
 function NoPoizen:OpenHudEditMode()
-	if not EditModeManagerFrame then
-		UIParentLoadAddOn("Blizzard_EditMode")
-	end
-	if EditModeManagerFrame and ShowUIPanel then
-		ShowUIPanel(EditModeManagerFrame)
-		return true
-	end
-	return false
+	return self.BeginPoisonIndicatorEditMode and self:BeginPoisonIndicatorEditMode() or false
 end
 
 function NoPoizen:InitializeSlashCommands()
@@ -616,8 +634,12 @@ function NoPoizen:HandleSlashCommand(input)
 	end
 	if command == "edit" then
 		if not self:OpenHudEditMode() then
-			self:Print("HUD Edit Mode is unavailable.")
+			self:Print("Position editor unavailable while disabled, loading, or restricted.")
 		end
+		return
+	end
+	if command == "diagnostics" or command == "diag" then
+		self:ShowDiagnostics()
 		return
 	end
 	if command == "test" then
@@ -639,7 +661,7 @@ function NoPoizen:HandleSlashCommand(input)
 		return
 	end
 
-	self:Print("Commands: /nopoizen options | edit | enable | disable | test")
+	self:Print("Commands: /nopoizen options | edit | enable | disable | test | diagnostics")
 end
 
 function NoPoizen:OnInitialize()
@@ -647,9 +669,6 @@ function NoPoizen:OnInitialize()
 	self:InitializeSlashCommands()
 	if self.InitializeOptionsWindow then
 		self:InitializeOptionsWindow()
-	end
-	if self.TryInstallPoisonIndicatorEditModeHooks then
-		self:TryInstallPoisonIndicatorEditModeHooks()
 	end
 	self.isInitialized = true
 end
@@ -664,8 +683,8 @@ function NoPoizen:OnLogin()
 end
 
 function NoPoizen:ADDON_LOADED(_, loadedAddonName)
-	if loadedAddonName == "Blizzard_EditMode" and self.TryInstallPoisonIndicatorEditModeHooks then
-		self:TryInstallPoisonIndicatorEditModeHooks()
+	if self.isEnabled and self.TryRegisterEditModeCallbacks then
+		self:TryRegisterEditModeCallbacks()
 	end
 	if loadedAddonName ~= self.addonName then
 		return
@@ -699,8 +718,16 @@ function NoPoizen:LOADING_SCREEN_ENABLED()
 		return
 	end
 	self.isLoadingScreenActive = true
+	self.blizzardEditModeActive = false
+	if self.EndPoisonIndicatorEditMode then
+		self:EndPoisonIndicatorEditMode(false)
+	end
+	self.currentPoisonState = nil
+	if self.RefreshPoisonIndicatorVisualState then
+		self:RefreshPoisonIndicatorVisualState()
+	end
 	self.postLoadRefreshAt = 0
-	self.postLoadRefreshToken = (self.postLoadRefreshToken or 0) + 1
+	LibChev.Advance(self, "postLoadRefreshToken")
 	self:ResetAudioTransitionArming()
 end
 
@@ -713,7 +740,7 @@ function NoPoizen:LOADING_SCREEN_DISABLED()
 end
 
 function NoPoizen:UNIT_AURA(_, unitToken)
-	if not self.isEnabled or unitToken ~= "player" then
+	if not self.isEnabled or not self:CanAccessValue(unitToken) or unitToken ~= "player" then
 		return
 	end
 	if self.RefreshPoisonState then
@@ -740,7 +767,7 @@ function NoPoizen:ACTIVE_TALENT_GROUP_CHANGED()
 end
 
 function NoPoizen:PLAYER_SPECIALIZATION_CHANGED(_, unitToken)
-	if unitToken ~= "player" then
+	if not self:CanAccessValue(unitToken) or unitToken ~= "player" then
 		return
 	end
 	if self.isEnabled and self.RefreshPoisonState then
@@ -760,12 +787,58 @@ function NoPoizen:TRAIT_CONFIG_LIST_UPDATED()
 	end
 end
 
+function NoPoizen:PLAYER_REGEN_ENABLED()
+	if self.isEnabled then
+		self:RefreshPoisonState("PLAYER_REGEN_ENABLED")
+	end
+end
+
+function NoPoizen:PLAYER_ALIVE()
+	if self.isEnabled then
+		self:RefreshPoisonState("PLAYER_ALIVE")
+	end
+end
+
+function NoPoizen:PLAYER_EQUIPMENT_CHANGED()
+	if self.isEnabled then
+		self:RefreshPoisonState("PLAYER_EQUIPMENT_CHANGED")
+	end
+end
+
+function NoPoizen:UNIT_INVENTORY_CHANGED(_, unit)
+	if self.isEnabled and self:CanAccessValue(unit) and unit == "player" then
+		self:RefreshPoisonState("UNIT_INVENTORY_CHANGED")
+	end
+end
+
+function NoPoizen:ADDON_RESTRICTION_STATE_CHANGED()
+	-- Restriction queries report false during event dispatch: defer the observation.
+	if not self.isEnabled then
+		return
+	end
+	LibChev.Advance(self, "restrictionRefreshToken")
+	self.API.Delay(
+		0,
+		LibChev.Fence(self, { "restrictionRefreshToken", "postLoadRefreshToken" }, function()
+			if self.isEnabled and not self.isLoggingOut then
+				self:RefreshPoisonState("ADDON_RESTRICTION_STATE_CHANGED")
+			end
+		end)
+	)
+end
+
 local function DispatchEvent(_, eventName, ...)
 	local handler = NoPoizen[eventName]
 	if type(handler) ~= "function" then
 		return
 	end
-	handler(NoPoizen, eventName, ...)
+	local ok, err = pcall(handler, NoPoizen, eventName, ...)
+	if not ok then
+		NoPoizen:LogDiagnostic("event-error", eventName .. ": " .. NoPoizen:SafeToString(err))
+		if type(geterrorhandler) == "function" then
+			geterrorhandler()(err)
+		end
+	end
 end
 
 NoPoizen.eventFrame = NoPoizen.eventFrame or CreateFrame("Frame")
