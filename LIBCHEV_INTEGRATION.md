@@ -21,7 +21,7 @@ Review fixes:
 - All 18 Lua files parse under both versions; all 16 TOC paths resolve in order and exclude offline scripts. Consumer formatting and diff whitespace checks pass.
 - `vendor.py --check` verifies the manifest and embedded bytes. Each embedded payload also matches `git show 09ac76e:<file>` from the validated upstream commit. The migration verified the legacy manifest against Git before removing the old copy; embedded files were not edited.
 
-Runtime files are `Libs/libchev/libchev.lua`, `ReportWindow.lua`, and `SelfTests.lua`, loaded before `Core.lua`. Update the dependency only through the upstream `scripts/vendor.py` against an explicitly reviewed immutable commit. The addon version remains the existing `1.0.8-beta.2`; no addon release tag is created.
+Runtime files are `Libs/libchev/libchev.lua`, `ReportWindow.lua`, and `SelfTests.lua`, loaded before `Core.lua`. Update the dependency only through the upstream `scripts/vendor.py` against an explicitly reviewed immutable commit. The prepared addon release is `1.1.0-beta.1`. Integration and release preparation create no tag; publication waits for the coordinated release gate.
 
 ## Live validation still required
 

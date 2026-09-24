@@ -245,7 +245,7 @@ C_UnitAuras = {
 }
 C_AddOns = {
 	GetAddOnMetadata = function()
-		return "1.0.8-beta.2"
+		return "1.1.0-beta.1"
 	end,
 }
 C_Item = {
