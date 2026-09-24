@@ -3,6 +3,7 @@ local NoPoizen = _G.NoPoizen
 if not NoPoizen then
 	return
 end
+local LibChev = NoPoizen.LibChev
 
 NoPoizen.tests = NoPoizen.tests or {}
 
@@ -10,11 +11,7 @@ local function Fail(message)
 	error(message or "test failed", 2)
 end
 
-local function AssertEquals(actual, expected, context)
-	if actual ~= expected then
-		Fail(string.format("%s (expected=%s actual=%s)", context or "assert", tostring(expected), tostring(actual)))
-	end
-end
+local AssertEquals = LibChev.AssertEqual
 
 local function AssertTrue(value, context)
 	if not value then
@@ -39,29 +36,27 @@ function NoPoizen:RegisterTest(name, fn)
 	return true
 end
 
+for _, case in ipairs(LibChev.SelfTests()) do
+	NoPoizen:RegisterTest(case.name, case.run)
+end
+
 function NoPoizen:RunTests(reverse)
-	local names = {}
+	local names, cases = {}, {}
 	for name in pairs(self.tests) do
-		table.insert(names, name)
+		names[#names + 1] = name
 	end
-	table.sort(names, function(a, b)
-		if reverse then
-			return a > b
-		end
-		return a < b
-	end)
-	local passed, failed = 0, 0
+	table.sort(names)
 	for _, name in ipairs(names) do
-		local ok, err = pcall(self.tests[name])
-		if ok then
-			passed = passed + 1
-		else
-			failed = failed + 1
-			self:Print("FAIL " .. name .. ": " .. self:SafeToString(err))
-		end
+		cases[#cases + 1] = { name = name, run = self.tests[name] }
 	end
-	self:Print(string.format("Tests complete: %d passed, %d failed", passed, failed))
-	return failed == 0, passed, failed
+	local result = LibChev.RunTests(cases, {
+		reverse = reverse,
+		onFailure = function(failure)
+			self:Print("FAIL " .. failure.name .. ": " .. failure.error)
+		end,
+	})
+	self:Print(LibChev.TestSummary(result))
+	return result.failed == 0, result.passed, result.failed
 end
 
 -- Every regression operates on a detached addon instance. No live state, frames,

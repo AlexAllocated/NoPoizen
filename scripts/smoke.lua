@@ -362,10 +362,21 @@ NoPoizen:SetOption("widgetScale", 1)
 
 local database, state, runtime, pendingTimers, soundCount =
 	NoPoizen.db, NoPoizen.currentPoisonState, NoPoizen.registeredRuntimeEvents, #timers, #sounds
+local liveLog = NoPoizen.diagnosticHistory
+local liveEntries, liveSequence, liveDropped = liveLog.entries, liveLog.sequence, liveLog.dropped
+local liveLogText = {}
+for i, entry in ipairs(liveEntries) do
+	liveLogText[i] = NoPoizen.LibChev.FormatEntry(entry)
+end
 assert(NoPoizen:RunTests())
 assert(NoPoizen:RunTests(true))
 assert(NoPoizen.db == database and NoPoizen.currentPoisonState == state and NoPoizen.registeredRuntimeEvents == runtime)
 assert(#timers == pendingTimers and #sounds == soundCount, "tests must not invoke live adapters")
+assert(NoPoizen.diagnosticHistory == liveLog and liveLog.entries == liveEntries)
+assert(liveLog.sequence == liveSequence and liveLog.dropped == liveDropped and #liveEntries == #liveLogText)
+for i, entry in ipairs(liveEntries) do
+	assert(NoPoizen.LibChev.FormatEntry(entry) == liveLogText[i])
+end
 NoPoizen:ShowDiagnostics()
 NoPoizen:LOADING_SCREEN_ENABLED()
 assert(NoPoizen.currentPoisonState == nil and not NoPoizen.poisonIndicatorHostFrame:IsShown())

@@ -5,6 +5,9 @@
 ## SavedVariablesPerCharacter: NoPoizenDBChar
 ## Author: Chev
 
+Libs/libchev/libchev.lua
+Libs/libchev/ReportWindow.lua
+Libs/libchev/SelfTests.lua
 Core.lua
 ClientDiagnostics.lua
 Diagnostics.lua

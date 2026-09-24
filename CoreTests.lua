@@ -170,7 +170,7 @@ NoPoizen:RegisterTest("diagnostics history is bounded and does not stringify for
 	end
 	Equal(#f.diagnosticLog, 60)
 	Equal(f.diagnosticDropped, 40)
-	assert(#f.diagnosticLog[60] < 290)
+	assert(#f.diagnosticLog[60].text <= 240)
 end)
 
 NoPoizen:RegisterTest("core false event registration result is not recorded as active", function()
@@ -180,4 +180,70 @@ NoPoizen:RegisterTest("core false event registration result is not recorded as a
 	end
 	f:RegisterRuntimeEvents()
 	Equal(next(f.registeredRuntimeEvents), nil)
+end)
+
+NoPoizen:RegisterTest("diagnostics structured histories remain detached between fixtures", function()
+	local first, second = Fixture(), Fixture()
+	first.LogDiagnostic, second.LogDiagnostic = NoPoizen.LogDiagnostic, NoPoizen.LogDiagnostic
+	first:LogDiagnostic("test event", "first")
+	second:LogDiagnostic("test event", "second")
+	Equal(first.diagnosticLog[1].text, "first")
+	Equal(second.diagnosticLog[1].text, "second")
+	Equal(first.diagnosticLog[1].sequence, 1)
+	Equal(first.diagnosticLog[1].category, "TEST_EVENT")
+	Equal(first.diagnosticLog[1].elapsed, first.now)
+	assert(first.diagnosticLog ~= second.diagnosticLog)
+end)
+
+NoPoizen:RegisterTest("diagnostics clock failures cannot break error reporting", function()
+	local f = Fixture()
+	f.LogDiagnostic = NoPoizen.LogDiagnostic
+	f.API.GetTime = function()
+		error("clock unavailable")
+	end
+	f:LogDiagnostic("failure", "original failure")
+	Equal(f.diagnosticLog[1].elapsed, nil)
+	Equal(f.diagnosticLog[1].text, "original failure")
+end)
+
+NoPoizen:RegisterTest("diagnostics common header and history use only private adapters", function()
+	local f = Fixture()
+	f.API.GetAddOnVersion = function()
+		return "test-version"
+	end
+	f.API.GetBuildInfo = function()
+		return "test-client", "test-build", "date", 120100
+	end
+	f.API.GetLocale = function()
+		return "test-locale"
+	end
+	f.GetClientCapabilityLines = function()
+		return { "private client observation" }
+	end
+	f.LogDiagnostic = NoPoizen.LogDiagnostic
+	f:LogDiagnostic("test event", "private log message")
+	local report = f:BuildDiagnostics()
+	assert(report:find("addon=NoPoizen", 1, true))
+	assert(report:find("version=test-version", 1, true))
+	assert(report:find("client.locale=test-locale", 1, true))
+	assert(report:find("capability.1=private client observation", 1, true))
+	assert(report:find("[TEST_EVENT]", 1, true))
+	assert(report:find("private log message", 1, true))
+end)
+
+NoPoizen:RegisterTest("diagnostics combined report has one overall character bound", function()
+	local f = Fixture()
+	f.API.GetAddOnVersion = function()
+		return "test-version"
+	end
+	f.GetClientCapabilityLines = function()
+		local rows = {}
+		for i = 1, 1000 do
+			rows[i] = string.rep("x", 5000)
+		end
+		return rows
+	end
+	local report = f:BuildDiagnostics()
+	assert(#report <= 32768)
+	assert(report:find("[truncated]", 1, true))
 end)

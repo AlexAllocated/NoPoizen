@@ -1,7 +1,9 @@
 local addonName, addonTable = ...
+local LibChev = assert(addonTable and addonTable.LibChev, "libchev must load before Core.lua")
 
 local NoPoizen = addonTable or {}
 _G.NoPoizen = NoPoizen
+NoPoizen.LibChev = LibChev
 
 NoPoizen.addonName = addonName or "NoPoizen"
 NoPoizen.MISSING_SOUND_FILE_PATH = "Interface\\AddOns\\NoPoizen\\nopoizen.wav"
@@ -74,6 +76,12 @@ NoPoizen.API = NoPoizen.API
 			if C_Timer and C_Timer.After then
 				C_Timer.After(delaySeconds, callbackFn)
 			end
+		end,
+		GetBuildInfo = function()
+			return GetBuildInfo()
+		end,
+		GetLocale = function()
+			return GetLocale()
 		end,
 		GetAddOnVersion = function(addon)
 			if C_AddOns and C_AddOns.GetAddOnMetadata then
@@ -256,19 +264,15 @@ function NoPoizen:ResetAudioTransitionArming(delaySeconds)
 	self.audioMissingState = false
 	self.audioTransitionsArmed = false
 	self.audioTransitionsArmAt = now + delay
-	self.audioArmToken = (self.audioArmToken or 0) + 1
-	local token, lifetime = self.audioArmToken, self.postLoadRefreshToken
-	self.API.Delay(delay, function()
-		if
-			self.isEnabled
-			and not self.isLoggingOut
-			and token == self.audioArmToken
-			and lifetime == self.postLoadRefreshToken
-			and not self.isLoadingScreenActive
-		then
-			self:RefreshPoisonState("AUDIO_BASELINE")
-		end
-	end)
+	LibChev.Advance(self, "audioArmToken")
+	self.API.Delay(
+		delay,
+		LibChev.Fence(self, { "audioArmToken", "postLoadRefreshToken" }, function()
+			if self.isEnabled and not self.isLoggingOut and not self.isLoadingScreenActive then
+				self:RefreshPoisonState("AUDIO_BASELINE")
+			end
+		end)
+	)
 end
 
 function NoPoizen:SchedulePostLoadPoisonRefresh(delaySeconds)
@@ -285,26 +289,25 @@ function NoPoizen:SchedulePostLoadPoisonRefresh(delaySeconds)
 	end
 
 	self.postLoadRefreshAt = now + delay
-	self.postLoadRefreshToken = (self.postLoadRefreshToken or 0) + 1
-	local scheduledToken = self.postLoadRefreshToken
+	LibChev.Advance(self, "postLoadRefreshToken")
 
-	self.audioArmToken = (self.audioArmToken or 0) + 1
+	LibChev.Advance(self, "audioArmToken")
 	-- Arm transition audio no earlier than the first post-loading refresh.
 	self.audioTransitionsArmed = false
 	self.audioTransitionsArmAt = self.postLoadRefreshAt
 
 	if self.API and self.API.Delay then
-		self.API.Delay(delay, function()
-			if scheduledToken ~= self.postLoadRefreshToken then
-				return
-			end
-			if not self.isEnabled or self.isLoggingOut or self.isLoadingScreenActive then
-				return
-			end
-			if self.RefreshPoisonState then
-				self:RefreshPoisonState("POST_LOADING_REFRESH")
-			end
-		end)
+		self.API.Delay(
+			delay,
+			LibChev.Fence(self, { "postLoadRefreshToken" }, function()
+				if not self.isEnabled or self.isLoggingOut or self.isLoadingScreenActive then
+					return
+				end
+				if self.RefreshPoisonState then
+					self:RefreshPoisonState("POST_LOADING_REFRESH")
+				end
+			end)
+		)
 	end
 end
 
@@ -561,7 +564,7 @@ function NoPoizen:Enable()
 	self.isEnabled = true
 	self.isLoadingScreenActive = false
 	self.postLoadRefreshAt = 0
-	self.postLoadRefreshToken = (self.postLoadRefreshToken or 0) + 1
+	LibChev.Advance(self, "postLoadRefreshToken")
 	self:ResetAudioTransitionArming()
 
 	if self.EnsurePoisonIndicatorWidget then
@@ -596,7 +599,7 @@ function NoPoizen:Disable()
 	self:UnregisterRuntimeEvents()
 	self.isLoadingScreenActive = false
 	self.postLoadRefreshAt = 0
-	self.postLoadRefreshToken = (self.postLoadRefreshToken or 0) + 1
+	LibChev.Advance(self, "postLoadRefreshToken")
 	self.audioMissingState = false
 	self.audioTransitionsArmed = false
 	self.audioTransitionsArmAt = 0
@@ -724,7 +727,7 @@ function NoPoizen:LOADING_SCREEN_ENABLED()
 		self:RefreshPoisonIndicatorVisualState()
 	end
 	self.postLoadRefreshAt = 0
-	self.postLoadRefreshToken = (self.postLoadRefreshToken or 0) + 1
+	LibChev.Advance(self, "postLoadRefreshToken")
 	self:ResetAudioTransitionArming()
 end
 
@@ -813,18 +816,15 @@ function NoPoizen:ADDON_RESTRICTION_STATE_CHANGED()
 	if not self.isEnabled then
 		return
 	end
-	self.restrictionRefreshToken = (self.restrictionRefreshToken or 0) + 1
-	local token, lifetime = self.restrictionRefreshToken, self.postLoadRefreshToken
-	self.API.Delay(0, function()
-		if
-			self.isEnabled
-			and not self.isLoggingOut
-			and token == self.restrictionRefreshToken
-			and lifetime == self.postLoadRefreshToken
-		then
-			self:RefreshPoisonState("ADDON_RESTRICTION_STATE_CHANGED")
-		end
-	end)
+	LibChev.Advance(self, "restrictionRefreshToken")
+	self.API.Delay(
+		0,
+		LibChev.Fence(self, { "restrictionRefreshToken", "postLoadRefreshToken" }, function()
+			if self.isEnabled and not self.isLoggingOut then
+				self:RefreshPoisonState("ADDON_RESTRICTION_STATE_CHANGED")
+			end
+		end)
+	)
 end
 
 local function DispatchEvent(_, eventName, ...)

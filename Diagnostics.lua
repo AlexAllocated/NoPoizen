@@ -2,22 +2,22 @@ local NoPoizen = _G.NoPoizen
 if not NoPoizen then
 	return
 end
+local LibChev = NoPoizen.LibChev
 
 -- Only sanitized primitives enter this addon-owned, session-only bounded history.
 function NoPoizen:LogDiagnostic(kind, message)
-	self.diagnosticLog = self.diagnosticLog or {}
-	self.diagnosticSequence = (self.diagnosticSequence or 0) + 1
-	local entry = string.format(
-		"%d %s: %s",
-		self.diagnosticSequence,
-		self:SafeToString(kind):sub(1, 32),
-		self:SafeToString(message):sub(1, 240)
-	)
-	table.insert(self.diagnosticLog, entry)
-	if #self.diagnosticLog > 60 then
-		table.remove(self.diagnosticLog, 1)
-		self.diagnosticDropped = (self.diagnosticDropped or 0) + 1
+	self.diagnosticHistory = self.diagnosticHistory or LibChev.NewLog()
+	local now
+	if self.API and type(self.API.GetTime) == "function" then
+		local ok, value = pcall(self.API.GetTime)
+		if ok then
+			now = LibChev.Number(value)
+		end
 	end
+	LibChev.AppendLog(self.diagnosticHistory, message, kind, now, { maxLines = 60, maxEntry = 240 })
+	self.diagnosticLog = self.diagnosticHistory.entries
+	self.diagnosticSequence = self.diagnosticHistory.sequence
+	self.diagnosticDropped = self.diagnosticHistory.dropped
 end
 
 function NoPoizen:RecordPoisonObservation(reason, state)
@@ -38,11 +38,12 @@ end
 
 function NoPoizen:BuildDiagnostics()
 	local ok, version = pcall(self.API.GetAddOnVersion, self.addonName)
-	local lines =
-		{ "NoPoizen " .. (ok and self:SafeToString(version, "unknown") or "unknown") .. " diagnostics (session only)" }
+	local environment = LibChev.ReadEnvironment(self.API)
+	local report = LibChev.DiagnosticReport("NoPoizen", ok and version or "unknown", environment)
 	local function Add(key, value)
-		lines[#lines + 1] = key .. "=" .. self:SafeToString(value)
+		report:Add(key, value)
 	end
+	Add("historyScope", "session only")
 	Add("enabled", self.isEnabled == true)
 	Add("loading", self.isLoadingScreenActive == true)
 	Add("audioArmed", self.audioTransitionsArmed == true)
@@ -72,18 +73,24 @@ function NoPoizen:BuildDiagnostics()
 			Add(category .. "Active", state.activeCounts and state.activeCounts[category])
 		end
 	else
-		lines[#lines + 1] = "No current poison observation."
+		Add("status", "No current poison observation.")
 	end
 	if self.GetClientCapabilityLines then
-		for _, line in ipairs(self:GetClientCapabilityLines()) do
-			lines[#lines + 1] = line
+		for index, line in ipairs(self:GetClientCapabilityLines()) do
+			if index > 32 then
+				break
+			end
+			Add("capability." .. index, line)
 		end
 	end
 	Add("historyDropped", self.diagnosticDropped or 0)
-	for _, entry in ipairs(self.diagnosticLog or {}) do
-		lines[#lines + 1] = entry
+	for index, entry in ipairs(self.diagnosticLog or {}) do
+		if index > 60 then
+			break
+		end
+		Add("history." .. index, LibChev.FormatEntry(entry))
 	end
-	return table.concat(lines, "\n")
+	return report:Text()
 end
 
 function NoPoizen:ShowDiagnostics()
