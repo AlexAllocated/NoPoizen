@@ -1,5 +1,11 @@
 # NoPoizen changelog
 
+## 1.1.1 — 2026-09-24
+
+Keep overlapping debug consoles and their controls in one native stacking group through private libchev 1.1.3. Category menus stay with their owning console.
+
+Validation: 123 tests pass in both orders under Lua 5.1/5.2, plus Retail/Forever smoke simulations, packaging and runtime-source checks. Live multi-window interaction remains a separate client check. Forever poison monitoring remains unsupported; diagnostics and tests are available.
+
 ## 1.1.0 — 2026-09-24
 
 Use the same private libchev 1.1.2 debug console across all three addons, including category/search filters, copy controls, test results, diagnostic reports, timestamps when available, and a single final test summary. Fix stretched native frame artwork with explicit texture bounds.
