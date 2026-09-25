@@ -685,6 +685,7 @@ function NoPoizen:OnLogin()
 	else
 		self:Disable()
 	end
+	self:PrintWelcomeMessage()
 end
 
 function NoPoizen:ADDON_LOADED(_, loadedAddonName)
