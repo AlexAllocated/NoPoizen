@@ -6,7 +6,8 @@
 ## Interface-Mists: 50504
 ## Interface-Titan: 38001, 38002
 ## Title: NoPoizen
-## Version: 1.2.0
+## IconTexture: 132273
+## Version: 1.2.1
 ## Notes: Warns Rogues when required aura or weapon poisons are missing.
 ## SavedVariablesPerCharacter: NoPoizenDBChar
 ## Author: Chev
