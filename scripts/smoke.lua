@@ -1,5 +1,13 @@
 -- Offline integration only: never load this file into a live WoW client.
 local root, client = arg[1] or ".", arg[2] or "retail"
+local versions =
+	{ retail = "12.1.0", forever = "1.60.1", era = "1.15.9", tbc = "2.5.6", mists = "5.5.4", titan = "3.80.2" }
+assert(versions[client], "unknown smoke client")
+local weaponClient = client == "forever" or client == "era" or client == "tbc" or client == "titan"
+local coatings = {
+	[0] = { { hasEnchant = true, enchantID = 323, charges = 60, timeLeft = 1800000 } },
+	[1] = { { hasEnchant = true, enchantID = 22, charges = 0, timeLeft = 1800000 } },
+}
 local unpack = table.unpack or unpack
 local now, timers, sounds, restricted = 0, {}, {}, false
 local frameCount, chat = 0, {}
@@ -202,7 +210,10 @@ function GetSpecializationInfo()
 	return 259, "Assassination"
 end
 function GetBuildInfo()
-	return client == "retail" and "12.1.0" or "1.60.1", "test", "date", client == "retail" and 120100 or 16001
+	return versions[client],
+		"test",
+		"date",
+		({ retail = 120100, forever = 16001, era = 11509, tbc = 20506, mists = 50504, titan = 38002 })[client]
 end
 function InCombatLockdown()
 	return restricted
@@ -242,7 +253,8 @@ Enum = {
 }
 C_SpellBook = {
 	IsSpellKnown = function(id)
-		return id == 2823 or id == 3408
+		return weaponClient and id == (client == "forever" and 1298494 or 2842)
+			or (not weaponClient and (id == 2823 or id == 3408))
 	end,
 }
 C_Spell = {
@@ -269,10 +281,23 @@ C_AddOns = {
 	end,
 }
 C_Item = {
-	GetWeaponEnchantInfo = function()
-		return {}
+	GetWeaponEnchantInfo = client == "forever" and function(slot)
+		return coatings[slot]
+	end or nil,
+	GetItemInfoInstant = function(id)
+		return id, "Weapon", "Dagger", "INVTYPE_WEAPON", 1, 2
 	end,
 }
+function UnitLevel()
+	return 20
+end
+function GetInventoryItemID(_, slot)
+	return slot
+end
+function GetWeaponEnchantInfo()
+	local m, o = coatings[0][1] or {}, coatings[1][1] or {}
+	return m.hasEnchant, m.timeLeft, m.charges, m.enchantID, o.hasEnchant, o.timeLeft, o.charges, o.enchantID
+end
 Settings = {
 	RegisterCanvasLayoutCategory = function()
 		return {
@@ -342,7 +367,7 @@ NoPoizen:PLAYER_LOGIN()
 assert(NoPoizen.isEnabled and NoPoizen.optionsCategory)
 Advance(5)
 assert(#sounds == 0, "initial state must be quiet")
-if client == "retail" then
+if not weaponClient then
 	assert(NoPoizen.currentPoisonState.status == "satisfied")
 	auras[2823] = nil
 	NoPoizen:UNIT_AURA("UNIT_AURA", "player")
@@ -361,7 +386,29 @@ if client == "retail" then
 	NoPoizen:UNIT_AURA("UNIT_AURA", "player")
 	assert(NoPoizen.currentPoisonState.status == "satisfied" and #sounds == 2)
 else
-	assert(NoPoizen.currentPoisonState.status == "unsupported")
+	assert(NoPoizen.currentPoisonState.status == "satisfied")
+	assert(NoPoizen.eventFrame.scripts.OnUpdate, "weapon clients must poll expiry and charge changes")
+	coatings[0] = {}
+	NoPoizen:WEAPON_ENCHANT_CHANGED()
+	assert(NoPoizen.currentPoisonState.status == "missing" and #sounds == 1)
+	assert(NoPoizen.poisonIndicatorHostFrame:IsShown())
+	restricted = true
+	NoPoizen:ADDON_RESTRICTION_STATE_CHANGED()
+	Advance(0)
+	assert(NoPoizen.currentPoisonState.status == "unknown" and #sounds == 1)
+	restricted = false
+	NoPoizen:ADDON_RESTRICTION_STATE_CHANGED()
+	Advance(0)
+	assert(NoPoizen.currentPoisonState.status == "missing" and #sounds == 1)
+	coatings[0] = { { hasEnchant = true, enchantID = 323, timeLeft = 1000, charges = 10 } }
+	NoPoizen:WEAPON_SLOT_CHANGED()
+	assert(NoPoizen.currentPoisonState.status == "satisfied" and #sounds == 2)
+	coatings[0][1].timeLeft = 0
+	NoPoizen.eventFrame.scripts.OnUpdate(NoPoizen.eventFrame, 1)
+	assert(NoPoizen.currentPoisonState.status == "missing" and #sounds == 3)
+	coatings[0][1].timeLeft = 1000
+	NoPoizen.eventFrame.scripts.OnUpdate(NoPoizen.eventFrame, 1)
+	assert(NoPoizen.currentPoisonState.status == "satisfied" and #sounds == 4)
 end
 assert(NoPoizen:OpenHudEditMode())
 NoPoizen:SetOption("widgetScale", 1.5)

@@ -24,7 +24,7 @@ def payloads(root, library_source=None):
         raise ValueError('Invalid TOC load order or duplicate entries')
     if any(not line.endswith('.lua') or line.startswith('scripts/') for line in files):
         raise ValueError('Only runtime Lua files may appear in the TOC')
-    files += ['NoPoizen.toc', 'CHANGELOG.md', 'CURSEFORGE_DESCRIPTION.md',
+    files += ['NoPoizen.toc', 'CHANGELOG.md', 'CURSEFORGE_DESCRIPTION.md', 'CLIENT_COMPATIBILITY.md',
               'Libs/libchev/manifest.json', 'Libs/libchev/LICENSE']
     files += [f'sounds/{stem}-{percent:03d}.ogg'
               for stem in ('nopoizen', 'hahaha') for percent in range(5, 101, 5)]

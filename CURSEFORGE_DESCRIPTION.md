@@ -2,24 +2,18 @@
 
 NoPoizen is a focused quality-of-life addon for **Rogues** that helps you avoid fighting without proper poisons active.
 
-On supported Retail clients, it watches your current poison state and warns when you are missing required poisons. Unreadable or restricted observations do not trigger missing-poison warnings.
+On Retail and Mists it watches your poison auras; on Forever, Era/Hardcore/SoD, TBC and Titan Reforged it checks poison coverage on your equipped weapons. It warns when required poisons are missing. Unreadable or restricted observations do not trigger missing-poison warnings.
 
 ## What It Does
 
-- Monitors **lethal** and **non-lethal** poison categories.
-- Shows a center-screen reminder widget when your poison setup is incomplete.
-- Supports talent-based poison limits:
-  - Default: up to `1 lethal + 1 non-lethal`, limited to learned poison categories
-  - With `Dragon-Tempered Blades`: `2 lethal + 2 non-lethal`
-- Uses a two-row display:
-  - Row 1: Lethal Poisons
-  - Row 2: Non-Lethal Poisons
-- Removes already-applied poisons from each row.
-- Hides an entire row once that category is fully satisfied.
+- Retail/Mists: monitors learned **lethal** and **non-lethal** poison categories; Retail also accounts for **Dragon-Tempered Blades**.
+- Forever and weapon-based Classic clients: checks each equipped melee weapon and labels missing coverage **Main Hand** or **Off Hand**.
+- Recognizes actual poison enchants; other weapon coatings do not count.
+- Shows a movable reminder while an observable poison requirement is missing and hides satisfied rows.
 
 ## Indicator Position and Scale
 
-Open Blizzard **Edit Mode** to see NoPoizen alongside your other HUD elements. Drag its preview or click it to open position and scale controls. `/np edit` also opens those controls directly.
+Where available, open Blizzard **Edit Mode** to see NoPoizen alongside your other HUD elements. Drag its preview or click it to open position and scale controls. `/np edit` also opens those controls directly.
 
 - Drag the indicator to place it where you want.
 - Scale the indicator up/down in real time.
@@ -83,8 +77,9 @@ All settings are **per-character**, including:
 
 ## Compatibility Notes
 
-- Retail WoW: updated for the installed 12.1 client; live validation of this beta is pending.
-- Forever beta: experimental loading and diagnostics only. Poison/coating identifiers are not yet verified, so poison warnings remain disabled there.
+- Targets Retail, Forever, Era/Hardcore/SoD, Anniversary/TBC, Mists Classic and Titan Reforged.
+- Forever monitoring is implemented using client spell/enchant data, including multiple coatings and poison charges.
+- Source and offline validation are complete; in-game validation of the new client adapters remains pending.
 - Rogue-only behavior by design
 - Indicator logic automatically reacts to spec/talent changes and aura updates
 

@@ -7,13 +7,29 @@ end
 -- These wrappers belong to the addon. Tests use private fixtures, never client globals.
 NoPoizen.HUDAPI = {
 	IsRestricted = function()
+		if not NoPoizen:CanAccessValue(C_RestrictedActions) then
+			return true
+		end
 		if type(InCombatLockdown) == "function" then
 			local combat = InCombatLockdown()
 			if not NoPoizen:CanAccessValue(combat) or (combat ~= false and combat ~= nil) then
 				return true
 			end
 		end
-		if C_RestrictedActions and Enum and Enum.AddOnRestrictionType then
+		if C_RestrictedActions ~= nil then
+			if
+				not NoPoizen:CanAccessTable(C_RestrictedActions)
+				or not NoPoizen:CanAccessTable(Enum)
+				or not NoPoizen:CanAccessTable(Enum.AddOnRestrictionType)
+			then
+				return true
+			end
+			if
+				type(C_RestrictedActions.GetAddOnRestrictionState) ~= "function"
+				and type(C_RestrictedActions.IsAddOnRestrictionActive) ~= "function"
+			then
+				return true
+			end
 			for _, name in ipairs({ "Combat", "Encounter", "ChallengeMode", "PvPMatch", "Map" }) do
 				local restrictionType = Enum.AddOnRestrictionType[name]
 				if not NoPoizen:CanAccessValue(restrictionType) then
@@ -149,9 +165,19 @@ end
 
 local function GetDefaultEditModeRows(owner)
 	local rows = {}
+	if owner.GetPoisonClient and owner.weaponPoisonCatalogs and owner.weaponPoisonCatalogs[owner:GetPoisonClient()] then
+		return {
+			{ category = "mainHand", icons = { { icon = 132273 } } },
+			{ category = "offHand", icons = { { icon = 132273 } } },
+		}
+	end
+	local catalog = owner.poisonCatalog or {}
+	if owner.GetPoisonClient and owner:GetPoisonClient() == "mists" then
+		catalog = owner.mistsPoisonCatalog or catalog
+	end
 	for _, category in ipairs({ "lethal", "nonLethal" }) do
 		local row = { category = category, icons = {} }
-		for _, spell in ipairs((owner.poisonCatalog or {})[category] or {}) do
+		for _, spell in ipairs(catalog[category] or {}) do
 			-- A static preview does not need to read auras or spell APIs.
 			table.insert(row.icons, { icon = spell.icon or 134400 })
 		end

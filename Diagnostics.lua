@@ -17,6 +17,10 @@ function NoPoizen:RecordPoisonObservation(reason, state)
 		self:SafeToString(state.activeCounts and state.activeCounts.nonLethal),
 		self:SafeToString(state.requiredCounts and state.requiredCounts.lethal),
 		self:SafeToString(state.requiredCounts and state.requiredCounts.nonLethal),
+		self:SafeToString(state.activeCounts and state.activeCounts.mainHand),
+		self:SafeToString(state.activeCounts and state.activeCounts.offHand),
+		self:SafeToString(state.requiredCounts and state.requiredCounts.mainHand),
+		self:SafeToString(state.requiredCounts and state.requiredCounts.offHand),
 	}, "/")
 	self.observationCount = (self.observationCount or 0) + 1
 	if signature ~= self.lastObservationSignature then
@@ -43,8 +47,10 @@ function NoPoizen:BuildDiagnosticReport()
 		Add("reason", state.reason)
 		Add("mode", state.detectionMode)
 		Add("observable", state.observable)
-		Add("knownPoisonCount", state.knownPoisonCount)
-		Add("dragonTemperedBlades", state.hasDragonTemperedBlades)
+		if not state.activeEnchantIDs then
+			Add("knownPoisonCount", state.knownPoisonCount)
+			Add("dragonTemperedBlades", state.hasDragonTemperedBlades)
+		end
 		local function SpellIDs(ids)
 			local parts = {}
 			for index, spellID in ipairs(ids or {}) do
@@ -57,7 +63,9 @@ function NoPoizen:BuildDiagnosticReport()
 		end
 		Add("knownSpellIDs", SpellIDs(state.knownSpellIDs))
 		Add("activeSpellIDs", SpellIDs(state.activeSpellIDs))
-		for _, category in ipairs({ "lethal", "nonLethal" }) do
+		Add("activeEnchantIDs", SpellIDs(state.activeEnchantIDs))
+		Add("trainingSpellIDs", SpellIDs(state.trainingSpellIDs))
+		for _, category in ipairs({ "lethal", "nonLethal", "mainHand", "offHand" }) do
 			Add(category .. "Required", state.requiredCounts and state.requiredCounts[category])
 			Add(category .. "Active", state.activeCounts and state.activeCounts[category])
 		end

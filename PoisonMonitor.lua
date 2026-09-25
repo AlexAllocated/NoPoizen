@@ -20,11 +20,13 @@ NoPoizen.PoisonAPI = {
 		return NoPoizen:GetPlayerClassFile()
 	end,
 	GetDetectionMode = function()
-		if WOW_PROJECT_MAINLINE ~= nil and WOW_PROJECT_ID == WOW_PROJECT_MAINLINE then
-			return "retail-aura"
+		local client = NoPoizen:GetPoisonClient()
+		if client == "retail" or client == "mists" then
+			return client .. "-aura"
 		end
-		-- Forever exposes modern aura APIs, but its weapon coating semantics and
-		-- poison enchant identifiers are not established by those capabilities.
+		if NoPoizen.weaponPoisonCatalogs[client] then
+			return client .. "-weapon"
+		end
 		return "unsupported"
 	end,
 	IsSpellKnown = C_SpellBook and C_SpellBook.IsSpellKnown,
@@ -38,6 +40,19 @@ NoPoizen.PoisonAPI = {
 	ShouldSpellAuraBeSecret = C_Secrets and C_Secrets.ShouldSpellAuraBeSecret,
 	ShouldAurasBeSecret = C_Secrets and C_Secrets.ShouldAurasBeSecret,
 	ShouldUnitAuraIndexBeSecret = C_Secrets and C_Secrets.ShouldUnitAuraIndexBeSecret,
+}
+
+NoPoizen.mistsPoisonCatalog = {
+	lethal = {
+		{ spellID = 2823, fallbackName = "Deadly Poison" },
+		{ spellID = 8679, fallbackName = "Wound Poison" },
+	},
+	nonLethal = {
+		{ spellID = 3408, fallbackName = "Crippling Poison" },
+		{ spellID = 5761, fallbackName = "Mind-numbing Poison" },
+		{ spellID = 108211, fallbackName = "Leeching Poison" },
+		{ spellID = 108215, fallbackName = "Paralytic Poison" },
+	},
 }
 
 NoPoizen.poisonCatalog = {
@@ -155,7 +170,7 @@ NoPoizen.Testables.ShouldPlaySatisfiedAudio = ShouldPlaySatisfiedAudio
 NoPoizen.Testables.ResolveAudioArmingState = ResolveAudioArmingState
 NoPoizen.Testables.BuildIndicatorRows = BuildIndicatorRows
 
-local function CreatePoisonDetector(api, catalog)
+local function CreatePoisonDetector(api, catalog, weaponAPI)
 	catalog = catalog or NoPoizen.poisonCatalog
 	local detector = {}
 
@@ -406,7 +421,18 @@ local function CreatePoisonDetector(api, catalog)
 			return state
 		end
 		local modeOK, mode = pcall(api.GetDetectionMode)
-		if not modeOK or not CanRead(mode) or mode ~= "retail-aura" then
+		if not modeOK or not CanRead(mode) or type(mode) ~= "string" then
+			state.status, state.reason = "unsupported", "unverified-poison-mechanics"
+			return state
+		end
+		local weaponClient = mode:match("^(%a+)%-weapon$")
+		local weaponCatalog = weaponClient and NoPoizen.weaponPoisonCatalogs[weaponClient]
+		if weaponCatalog and weaponAPI then
+			return NoPoizen.Testables
+				.CreateWeaponPoisonDetector(weaponAPI, weaponClient, weaponCatalog, IsSpellKnownSafe)
+				:Evaluate(state)
+		end
+		if mode ~= "retail-aura" and mode ~= "mists-aura" then
 			state.status, state.reason = "unsupported", "unverified-poison-mechanics"
 			return state
 		end
@@ -427,7 +453,10 @@ local function CreatePoisonDetector(api, catalog)
 			return state
 		end
 		state.eligible = true
-		local dragonTempered = self:HasDragonTemperedBladesSelected()
+		local dragonTempered = false
+		if mode == "retail-aura" then
+			dragonTempered = self:HasDragonTemperedBladesSelected()
+		end
 		if dragonTempered == nil then
 			state.reason = "talent-knowledge-unavailable"
 			return state
@@ -466,7 +495,11 @@ local function CreatePoisonDetector(api, catalog)
 end
 
 NoPoizen.Testables.CreatePoisonDetector = CreatePoisonDetector
-local liveDetector = CreatePoisonDetector(NoPoizen.PoisonAPI)
+local liveDetector = CreatePoisonDetector(
+	NoPoizen.PoisonAPI,
+	NoPoizen:GetPoisonClient() == "mists" and NoPoizen.mistsPoisonCatalog or NoPoizen.poisonCatalog,
+	NoPoizen.WeaponPoisonAPI
+)
 
 function NoPoizen:HasDragonTemperedBladesSelected()
 	return liveDetector:HasDragonTemperedBladesSelected()
