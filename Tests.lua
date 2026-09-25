@@ -126,6 +126,9 @@ function NoPoizen:CreateTestFixture()
 			end,
 		}
 	end
+	fixture.RegisterWelcomeLink = function()
+		return false
+	end
 	fixture.LogDiagnostic = function() end
 	fixture.RecordPoisonObservation = function() end
 	return fixture

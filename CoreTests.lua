@@ -26,6 +26,37 @@ local function TestReportFixture()
 	return f
 end
 
+NoPoizen:RegisterTest("welcome login keeps monitoring active announces once and routes addon feedback", function()
+	local f = TestReportFixture()
+	local handler
+	f.Enable = function(owner)
+		owner.isEnabled = true
+	end
+	f.GetWelcomeUIPolicy = f.GetDebugUIPolicy
+	f.RegisterWelcomeLink = function(_, kind, callback)
+		Equal(kind, "nopoizenfeedback")
+		handler = callback
+		return true
+	end
+	f:OnLogin()
+	f:OnLogin()
+	Equal(f.hasLoggedIn, true)
+	Equal(f.isEnabled, true)
+	Equal(#f.messages, 1)
+	assert(f.messages[1]:find("vfixture-version loaded!", 1, true))
+	assert(f.messages[1]:find("Type /np for settings.", 1, true))
+	handler("nopoizenfeedback:curseforge")
+	Equal(f.messages[2], "Feedback: https://www.curseforge.com/wow/addons/nopoizen")
+	handler("nopoizenfeedback:github")
+	Equal(f.messages[3], "Feedback: https://github.com/AlexAllocated/NoPoizen")
+	f.GetWelcomeController = function()
+		error("welcome unavailable")
+	end
+	f:OnLogin()
+	Equal(f.isEnabled, true)
+	Equal(#f.messages, 3)
+end)
+
 NoPoizen:RegisterTest("test runner remains headless with unchanged returns and order", function()
 	local f = TestReportFixture()
 	local order = {}

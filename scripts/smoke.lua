@@ -19,6 +19,16 @@ local coatings = {
 local unpack = table.unpack or unpack
 local now, timers, sounds, restricted = 0, {}, {}, false
 local frameCount, chat = 0, {}
+local feedbackHandlers = {}
+LinkUtil = {
+	IsLinkHandlerRegistered = function(kind)
+		return feedbackHandlers[kind] ~= nil
+	end,
+	RegisterLinkHandler = function(kind, callback)
+		assert(feedbackHandlers[kind] == nil)
+		feedbackHandlers[kind] = callback
+	end,
+}
 DEFAULT_CHAT_FRAME = {
 	AddMessage = function(_, message)
 		chat[#chat + 1] = message
@@ -382,6 +392,17 @@ end
 NoPoizen:ADDON_LOADED("ADDON_LOADED", "NoPoizen")
 NoPoizen:PLAYER_LOGIN()
 assert(NoPoizen.isEnabled and NoPoizen.optionsCategory)
+local welcomeCount = #chat
+assert(chat[welcomeCount]:find("loaded! Now supports Retail, WoW Forever", 1, true))
+assert(chat[welcomeCount]:find("|Hnopoizenfeedback:github|h[GitHub]|h", 1, true))
+NoPoizen:PLAYER_LOGIN()
+assert(#chat == welcomeCount, "duplicate login must not repeat the welcome")
+feedbackHandlers.nopoizenfeedback("nopoizenfeedback:curseforge")
+local feedbackWindow = NoPoizen:GetWelcomeController().diagnosticsWindow
+assert(feedbackWindow.TextBox:GetText() == "https://www.curseforge.com/wow/addons/nopoizen")
+feedbackHandlers.nopoizenfeedback("nopoizenfeedback:github")
+assert(feedbackWindow.TextBox:GetText() == "https://github.com/AlexAllocated/NoPoizen")
+feedbackWindow:Hide()
 Advance(5)
 assert(#sounds == 0, "initial state must be quiet")
 if not weaponClient then
