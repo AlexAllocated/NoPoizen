@@ -230,3 +230,36 @@ addon:RegisterTest("weapon poisons: Titan vendor poisons require level rather th
 	f.level = f.secret
 	Equal(f:Evaluate().status, "unknown")
 end)
+
+addon:RegisterTest("weapon poisons: equipped SoD Deadly Brew supplies automatic coverage", function()
+	local f = Fixture("era")
+	f.api.IsEngravingEnabled = function()
+		return true
+	end
+	f.api.GetRuneForEquipmentSlot = function(slot)
+		Equal(slot, 5)
+		return { itemEnchantmentID = 6708 }
+	end
+	f.known = false
+	Equal(f:Evaluate().status, "satisfied")
+	Equal(f:Evaluate().deadlyBrew, true)
+	Equal(f:Evaluate().activeCounts.mainHand, 1)
+	Equal(f:Evaluate().activeCounts.offHand, 1)
+	f.known = true
+	f.api.GetRuneForEquipmentSlot = function()
+		return { itemEnchantmentID = 1 }
+	end
+	Equal(f:Evaluate().status, "missing")
+	f.api.GetRuneForEquipmentSlot = function()
+		return f.inaccessible
+	end
+	Equal(f:Evaluate().status, "unknown")
+	f.api.GetRuneForEquipmentSlot = function()
+		return { itemEnchantmentID = f.secret }
+	end
+	Equal(f:Evaluate().status, "unknown")
+	f.api.IsEngravingEnabled = function()
+		return false
+	end
+	Equal(f:Evaluate().status, "missing")
+end)

@@ -1,9 +1,17 @@
 -- Offline integration only: never load this file into a live WoW client.
 local root, client = arg[1] or ".", arg[2] or "retail"
-local versions =
-	{ retail = "12.1.0", forever = "1.60.1", era = "1.15.9", tbc = "2.5.6", mists = "5.5.4", titan = "3.80.2" }
+local versions = {
+	retail = "12.1.0",
+	forever = "1.60.1",
+	era = "1.15.9",
+	tbc = "2.5.6",
+	mists = "5.5.4",
+	titan = "3.80.2",
+	sod = "1.15.9",
+}
 assert(versions[client], "unknown smoke client")
-local weaponClient = client == "forever" or client == "era" or client == "tbc" or client == "titan"
+local weaponClient = client == "forever" or client == "era" or client == "tbc" or client == "titan" or client == "sod"
+local deadlyBrew = false
 local coatings = {
 	[0] = { { hasEnchant = true, enchantID = 323, charges = 60, timeLeft = 1800000 } },
 	[1] = { { hasEnchant = true, enchantID = 22, charges = 0, timeLeft = 1800000 } },
@@ -213,7 +221,7 @@ function GetBuildInfo()
 	return versions[client],
 		"test",
 		"date",
-		({ retail = 120100, forever = 16001, era = 11509, tbc = 20506, mists = 50504, titan = 38002 })[client]
+		({ retail = 120100, forever = 16001, era = 11509, tbc = 20506, mists = 50504, titan = 38002, sod = 11509 })[client]
 end
 function InCombatLockdown()
 	return restricted
@@ -273,6 +281,15 @@ C_Secrets = {
 C_UnitAuras = {
 	GetPlayerAuraBySpellID = function(id)
 		return auras[id] and {} or nil
+	end,
+}
+C_Engraving = {
+	IsEngravingEnabled = function()
+		return client == "sod"
+	end,
+	GetRuneForEquipmentSlot = function(slot)
+		assert(slot == 5)
+		return deadlyBrew and { itemEnchantmentID = 6708 } or nil
 	end,
 }
 C_AddOns = {
@@ -409,6 +426,15 @@ else
 	coatings[0][1].timeLeft = 1000
 	NoPoizen.eventFrame.scripts.OnUpdate(NoPoizen.eventFrame, 1)
 	assert(NoPoizen.currentPoisonState.status == "satisfied" and #sounds == 4)
+end
+if client == "sod" then
+	coatings[0], coatings[1] = {}, {}
+	deadlyBrew = true
+	NoPoizen:RUNE_UPDATED()
+	assert(NoPoizen.currentPoisonState.status == "satisfied" and NoPoizen.currentPoisonState.deadlyBrew)
+	deadlyBrew = false
+	NoPoizen:RUNE_UPDATED()
+	assert(NoPoizen.currentPoisonState.status == "missing" and not NoPoizen.currentPoisonState.deadlyBrew)
 end
 assert(NoPoizen:OpenHudEditMode())
 NoPoizen:SetOption("widgetScale", 1.5)

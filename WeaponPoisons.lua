@@ -66,6 +66,8 @@ addon.WeaponPoisonAPI = {
 	GetWeaponEnchants = C_Item and C_Item.GetWeaponEnchantInfo,
 	GetTemporaryEnchantmentInfo = C_PaperDollInfo and C_PaperDollInfo.GetTemporaryEnchantmentInfo,
 	GetLegacyWeaponEnchants = GetWeaponEnchantInfo,
+	IsEngravingEnabled = C_Engraving and C_Engraving.IsEngravingEnabled,
+	GetRuneForEquipmentSlot = C_Engraving and C_Engraving.GetRuneForEquipmentSlot,
 	GetWeaponSlot = function(hand)
 		if not addon:CanAccessTable(Enum) or not addon:CanAccessTable(Enum.WeaponSlot) then
 			return nil
@@ -119,6 +121,31 @@ local function CreateWeaponPoisonDetector(api, client, catalog, isKnown)
 				or equipLoc == "INVTYPE_WEAPONOFFHAND"
 				or equipLoc == "INVTYPE_2HWEAPON"
 			)
+	end
+	local function HasDeadlyBrew()
+		if client ~= "era" or type(api.IsEngravingEnabled) ~= "function" then
+			return false
+		end
+		local ok, enabled = Query(api.IsEngravingEnabled)
+		if not ok or not Read(enabled) or type(enabled) ~= "boolean" then
+			return nil
+		end
+		if not enabled then
+			return false
+		end
+		local runeOK, rune = Query(api.GetRuneForEquipmentSlot, 5) -- INVSLOT_CHEST
+		if not runeOK or not Read(rune) then
+			return nil
+		end
+		if rune == nil then
+			return false
+		end
+		if not Table(rune) or not Number(rune.itemEnchantmentID) then
+			return nil
+		end
+		-- Era SpellEffect 400080 -> enchant 6708 -> ability 399969/399965.
+		-- Check the equipped rune, not whether its engraving recipe was learned.
+		return rune.itemEnchantmentID == 6708
 	end
 	local function Classify(hasEnchant, id, remaining, charges)
 		if not Read(hasEnchant) then
@@ -233,7 +260,13 @@ local function CreateWeaponPoisonDetector(api, client, catalog, isKnown)
 			state.reason = "weapon-observation-restricted"
 			return state
 		end
-		local trained, knowledgeUnknown = false, false
+		local deadlyBrew = HasDeadlyBrew()
+		if deadlyBrew == nil then
+			state.reason = "rune-observation-unavailable"
+			return state
+		end
+		state.deadlyBrew = deadlyBrew
+		local trained, knowledgeUnknown = deadlyBrew, false
 		-- Wrath-derived Titan poisons are purchased rather than crafted. The
 		-- first usable coating (Instant Poison) requires level 20 in its data.
 		if client == "titan" then
@@ -274,13 +307,20 @@ local function CreateWeaponPoisonDetector(api, client, catalog, isKnown)
 			if equipped then
 				weapons = weapons + 1
 				state.requiredCounts[hand] = 1
-				local active, id = ObserveHand(hand, slot)
+				local active, id
+				if deadlyBrew then
+					active = true
+				else
+					active, id = ObserveHand(hand, slot)
+				end
 				if active == nil then
 					unknown = true
 				end
 				if active then
 					state.activeCounts[hand] = 1
-					state.activeEnchantIDs[#state.activeEnchantIDs + 1] = id
+					if id then
+						state.activeEnchantIDs[#state.activeEnchantIDs + 1] = id
+					end
 				elseif active == false then
 					state.missingCounts[hand] = 1
 					state.missingCounts.total = state.missingCounts.total + 1

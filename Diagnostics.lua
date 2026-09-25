@@ -65,6 +65,7 @@ function NoPoizen:BuildDiagnosticReport()
 		Add("activeSpellIDs", SpellIDs(state.activeSpellIDs))
 		Add("activeEnchantIDs", SpellIDs(state.activeEnchantIDs))
 		Add("trainingSpellIDs", SpellIDs(state.trainingSpellIDs))
+		Add("deadlyBrew", state.deadlyBrew)
 		for _, category in ipairs({ "lethal", "nonLethal", "mainHand", "offHand" }) do
 			Add(category .. "Required", state.requiredCounts and state.requiredCounts[category])
 			Add(category .. "Active", state.activeCounts and state.activeCounts[category])
