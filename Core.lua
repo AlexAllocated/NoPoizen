@@ -69,6 +69,7 @@ NoPoizen.runtimeEvents = {
 	"UNIT_INVENTORY_CHANGED",
 	"WEAPON_ENCHANT_CHANGED",
 	"WEAPON_SLOT_CHANGED",
+	"RUNE_UPDATED",
 	"ADDON_RESTRICTION_STATE_CHANGED",
 }
 
@@ -824,6 +825,12 @@ end
 function NoPoizen:WEAPON_SLOT_CHANGED()
 	if self.isEnabled then
 		self:RefreshPoisonState("WEAPON_SLOT_CHANGED")
+	end
+end
+
+function NoPoizen:RUNE_UPDATED()
+	if self.isEnabled then
+		self:RefreshPoisonState("RUNE_UPDATED")
 	end
 end
 

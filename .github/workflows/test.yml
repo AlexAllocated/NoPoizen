@@ -26,6 +26,7 @@ jobs:
       - run: lua${{ matrix.lua }} scripts/smoke.lua . retail
       - run: lua${{ matrix.lua }} scripts/smoke.lua . forever
       - run: lua${{ matrix.lua }} scripts/smoke.lua . era
+      - run: lua${{ matrix.lua }} scripts/smoke.lua . sod
       - run: lua${{ matrix.lua }} scripts/smoke.lua . tbc
       - run: lua${{ matrix.lua }} scripts/smoke.lua . mists
       - run: lua${{ matrix.lua }} scripts/smoke.lua . titan

@@ -18,7 +18,7 @@ evidence = {}
 for profile, build in profiles.items():
     tables = {}
     hashes = {}
-    for table in ["SpellName", "SpellEffect", "SpellItemEnchantment"]:
+    for table in ["SpellName", "SpellEffect", "SpellItemEnchantment", "Spell"]:
         path = cache / (build + "-" + table + ".csv")
         data = path.read_bytes()
         hashes[table] = hashlib.sha256(data).hexdigest()
@@ -43,6 +43,9 @@ for profile, build in profiles.items():
         lua.append("\t\t[%d] = { spellID = %d, usesCharges = %s }, -- %s" % (enchant, row["spellID"], str(row["usesCharges"]).lower(), row["name"]))
     lua.append("\t},")
     evidence[profile] = {"build": build, "sha256": hashes, "enchants": found}
+    if profile == "era":
+        evidence[profile]["automaticPoison"] = {"name": "Deadly Brew", "engravingSpellID": 400080,
+                                              "itemEnchantmentID": 6708, "abilitySpellIDs": [399969, 399965, 433521]}
 lua.append("}")
 (root / "PoisonData.lua").write_text("\n".join(lua) + "\n")
 (root / "scripts/poison-data-sources.json").write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n")

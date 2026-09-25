@@ -1,5 +1,15 @@
 {
   "era": {
+    "automaticPoison": {
+      "abilitySpellIDs": [
+        399969,
+        399965,
+        433521
+      ],
+      "engravingSpellID": 400080,
+      "itemEnchantmentID": 6708,
+      "name": "Deadly Brew"
+    },
     "build": "1.15.9.69722",
     "enchants": {
       "7": {
@@ -129,6 +139,7 @@
       }
     },
     "sha256": {
+      "Spell": "455f5cfb4ba633cdb4bb43d4b45e052f5402b4153083b487924384329ce2f9b4",
       "SpellEffect": "846e1a43c1371ce33e1037a132d5cf6d15b2809d9205205488f263484a935e74",
       "SpellItemEnchantment": "285c67db58fbe4838bc3ac329a480d0f8218917a22ddd5817f4ae2acd1acb8fe",
       "SpellName": "5ac8f81bc9b8aae4838c40cceb2e97bf5ca461838d9133eb2dd602cc7b0ebdd8"
@@ -239,6 +250,7 @@
       }
     },
     "sha256": {
+      "Spell": "291e588d209182febd2f5f8554d13373aa8dc0262b33f325ac4fbe78e2791f93",
       "SpellEffect": "fdecddfd93a3c27b48d7bbbebc8cc733a502fa8d58de623646550f9a5cffeb00",
       "SpellItemEnchantment": "3873a636bb85865a40db774aefe6ec69562efdd6935ed27a7156288d246210d6",
       "SpellName": "b9a0d125fd47e02c13790504e2f10c4e67a3e5d5c4a91295bd96514ba36610a6"
@@ -374,6 +386,7 @@
       }
     },
     "sha256": {
+      "Spell": "da79e44b9b73fedd636d15ed416eac0e1798b73519dee516d5508bfe046aa42f",
       "SpellEffect": "ad2309425c31dd979e3a8682e794178ddd3540f6090c774a12e1bb8432a8e1d7",
       "SpellItemEnchantment": "cf9b19ba7679e467f5193bdedfe0c8586fca068f9f7a231ea7c5d87331ee9b5a",
       "SpellName": "c897c51b9811c0d457c8bc34813e976d8768f378347ffcac892159f1ce89447c"
@@ -529,6 +542,7 @@
       }
     },
     "sha256": {
+      "Spell": "37d02abb9fc5523440d02ecbf9f1fc1d5814542fd796a864f3b40cd5ba145152",
       "SpellEffect": "c61828f3442b9e80d87d727ab9762243eb7049b90270be57a861da5a16ad9797",
       "SpellItemEnchantment": "cb1dc7a04e0d02b4386fd2616cec8a76e144bdb745a559ccf507223c7030ee3e",
       "SpellName": "f60aca8ff1c4308c0ce18e689acd70f19aa0b116945565caf760a45da04e60e9"
