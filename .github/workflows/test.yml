@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: AlexAllocated/libchev
-          ref: 2feea04bab60ba1c1b91bd01ab8a58ce02e091a9
+          ref: 484a7f54aaf46c0ec042ff813b06f69bba94628f
           path: library
       - run: sudo apt-get update && sudo apt-get install -y lua${{ matrix.lua }}
       - run: lua${{ matrix.lua }} scripts/test.lua

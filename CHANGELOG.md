@@ -1,5 +1,13 @@
 # NoPoizen changelog
 
+## 1.1.0 — 2026-09-24
+
+Use the same private libchev 1.1.2 debug console across all three addons, including category/search filters, copy controls, test results, diagnostic reports, timestamps when available, and a single final test summary. Fix stretched native frame artwork with explicit texture bounds.
+
+Includes poison-state and lifecycle hardening, public Edit Mode integration, and corrected Forever test fixtures that no longer construct NaN with division by zero. NaN rejection remains covered offline. Run `/np test`, `/np debug`, or `/np diagnostics`.
+
+Validation: 123 tests pass in both orders on Lua 5.1/5.2, plus offline NaN checks and Retail/Forever smoke simulations. The user confirmed the corrected shared frame appearance in-game. Forever poison monitoring remains unsupported; diagnostics and tests are available.
+
 ## 1.1.0-beta.3
 
 - Update the private shared library to libchev 1.1.1 for native WoW-style console artwork on addon-owned frames and one test summary per run.
