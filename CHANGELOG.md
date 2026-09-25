@@ -1,5 +1,9 @@
 # NoPoizen changelog
 
+## 1.2.1 — 2026-09-24
+
+Show Blizzard's poison icon beside NoPoizen in the AddOns list instead of the default question mark.
+
 ## 1.2.0 — 2026-09-24
 
 Enable real Forever weapon-poison monitoring using verified client spell/enchant data. Add Era/Hardcore/SoD, TBC, Mists and Titan adapters, hand-aware warnings, charge/expiry polling, SoD Deadly Brew awareness, Classic load metadata and six-client offline coverage. Preserve Retail aura/talent behavior and shared diagnostics. Live validation remains pending.
