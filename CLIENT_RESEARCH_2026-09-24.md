@@ -1,5 +1,7 @@
 # NoPoizen client/API evidence — September 24, 2026
 
+Historical report: Forever monitoring and Classic adapters have since been implemented. See [CLIENT_COMPATIBILITY.md](CLIENT_COMPATIBILITY.md) for current behavior, evidence and remaining live checks.
+
 Re-read the installed `.build.info`: Retail is **12.1.0.69933** (`wow`), Forever beta is **1.60.1.69977** (`wow_classic_beta`). Interface targets are **120100** and **16001** respectively. Plater's inspected current TOC independently declares `Interface-Mainline: 120100, 120105` and `Interface-Camelot: 16001`; the uninstalled 12.1.5 target does not establish NoPoizen compatibility.
 
 Both client exports were read directly, under:

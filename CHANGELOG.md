@@ -1,5 +1,13 @@
 # NoPoizen changelog
 
+## 1.2.0 — 2026-09-24
+
+Enable real Forever weapon-poison monitoring using verified client spell/enchant data. Add Era/Hardcore/SoD, TBC, Mists and Titan adapters, hand-aware warnings, charge/expiry polling, Classic load metadata and six-client offline coverage. Preserve Retail aura/talent behavior and shared diagnostics. Live validation remains pending.
+
+Validation: 140 tests pass in both orders on Lua 5.1 and 5.2, with six client profiles, Lua parsing and exact private-library vendor checks. NoPoizen client smoke checks and package verification also pass. Live validation of the new adapters remains pending.
+
+See [CLIENT_COMPATIBILITY.md](CLIENT_COMPATIBILITY.md) for source evidence, scope and validation limits.
+
 ## 1.1.1 — 2026-09-24
 
 Keep overlapping debug consoles and their controls in one native stacking group through private libchev 1.1.3. Category menus stay with their owning console.

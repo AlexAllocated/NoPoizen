@@ -67,6 +67,8 @@ NoPoizen.runtimeEvents = {
 	"PLAYER_ALIVE",
 	"PLAYER_EQUIPMENT_CHANGED",
 	"UNIT_INVENTORY_CHANGED",
+	"WEAPON_ENCHANT_CHANGED",
+	"WEAPON_SLOT_CHANGED",
 	"ADDON_RESTRICTION_STATE_CHANGED",
 }
 
@@ -571,6 +573,9 @@ function NoPoizen:Enable()
 	self.postLoadRefreshAt = 0
 	LibChev.Advance(self, "postLoadRefreshToken")
 	self:ResetAudioTransitionArming()
+	if self.StartWeaponPoisonPolling then
+		self:StartWeaponPoisonPolling()
+	end
 
 	if self.EnsurePoisonIndicatorWidget then
 		self:EnsurePoisonIndicatorWidget()
@@ -594,6 +599,9 @@ function NoPoizen:Disable()
 	self.db.enabled = false
 
 	self.isEnabled = false
+	if self.StopWeaponPoisonPolling then
+		self:StopWeaponPoisonPolling()
+	end
 	if self.UnregisterEditModeCallbacks then
 		self:UnregisterEditModeCallbacks()
 	end
@@ -804,6 +812,18 @@ end
 function NoPoizen:UNIT_INVENTORY_CHANGED(_, unit)
 	if self.isEnabled and self:CanAccessValue(unit) and unit == "player" then
 		self:RefreshPoisonState("UNIT_INVENTORY_CHANGED")
+	end
+end
+
+function NoPoizen:WEAPON_ENCHANT_CHANGED()
+	if self.isEnabled then
+		self:RefreshPoisonState("WEAPON_ENCHANT_CHANGED")
+	end
+end
+
+function NoPoizen:WEAPON_SLOT_CHANGED()
+	if self.isEnabled then
+		self:RefreshPoisonState("WEAPON_SLOT_CHANGED")
 	end
 end
 

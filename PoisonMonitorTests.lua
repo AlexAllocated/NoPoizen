@@ -72,6 +72,23 @@ Register("ordinary rogue sees missing categories", function()
 	AssertEqual(#state.indicatorRows, 2)
 end)
 
+Register("Mists uses its own aura choices without Retail talent requirements", function()
+	local f = Fixture()
+	f.api.GetDetectionMode = function()
+		return "mists-aura"
+	end
+	f.known = { [2823] = true, [108211] = true, [381801] = true }
+	f.auras = { [2823] = {}, [108211] = {} }
+	f.detector = NoPoizen.Testables.CreatePoisonDetector(f.api, NoPoizen.mistsPoisonCatalog)
+	local state = f.detector:Evaluate()
+	AssertEqual(state.status, "satisfied")
+	AssertEqual(state.requiredCounts.lethal, 1)
+	AssertEqual(state.requiredCounts.nonLethal, 1)
+	AssertEqual(state.hasDragonTemperedBlades, false)
+	f.auras[108211] = nil
+	AssertEqual(f.detector:Evaluate().status, "missing")
+end)
+
 Register("one lethal and one nonlethal satisfy baseline", function()
 	local f = Fixture()
 	f.auras[2823], f.auras[3408] = {}, {}

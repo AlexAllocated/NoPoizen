@@ -77,7 +77,7 @@ NoPoizen:RegisterTest("client diagnostics use weapon enums and preserve empty sa
 	Contains(report, "interface=16001")
 	Contains(report, "MainHand: no enchant rows")
 	Contains(report, "OffHand: no enchant rows")
-	Contains(report, "mapping: unverified")
+	Contains(report, "mapping: client data 1.60.1.70009")
 end)
 
 NoPoizen:RegisterTest("client diagnostics skip samples under restrictions", function()
@@ -144,7 +144,7 @@ NoPoizen:RegisterTest("client diagnostics retain multiple coating rows without p
 	local report = Report(api)
 	Contains(report, "id=100 ms=1000 charges=0")
 	Contains(report, "id=200 ms=2000 charges=40")
-	Contains(report, "weapon samples do not establish poison coverage")
+	Contains(report, "live validation pending")
 end)
 
 NoPoizen:RegisterTest("client diagnostics bound oversized enchant observations", function()

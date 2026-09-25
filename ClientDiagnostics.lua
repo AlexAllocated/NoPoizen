@@ -205,10 +205,8 @@ local function BuildClientCapabilityLines(api)
 		lines[#lines + 1] = "Weapon samples: modern multi-enchant API unavailable"
 		return lines
 	end
-	-- Samples are observations only. No row is classified as poison by its type,
-	-- icon, presence, or charges; Forever poison IDs require client evidence.
-	lines[#lines + 1] =
-		"Forever poison spell/enchant mapping: unverified; weapon samples do not establish poison coverage"
+	-- Raw samples remain separate from the detector's verified enchant catalog.
+	lines[#lines + 1] = "Forever poison spell/enchant mapping: client data 1.60.1.70009; live validation pending"
 	local safeOK, safe, reason = pcall(api.CanSample)
 	if not safeOK or not api.CanAccessValue(safe) or safe ~= true then
 		lines[#lines + 1] = "Weapon samples: skipped ("

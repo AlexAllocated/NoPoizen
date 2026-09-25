@@ -1,5 +1,7 @@
 # Shared library integration
 
+Historical report: Forever monitoring and Classic adapters have since been implemented. See [CLIENT_COMPATIBILITY.md](CLIENT_COMPATIBILITY.md) for current behavior, evidence and remaining live checks.
+
 NoPoizen privately embeds **libchev 1.1.3**, pinned to immutable commit [`445c0cf5b3dd40d36461f6e0b9adc2feb8dfb16b`](https://github.com/AlexAllocated/libchev/commit/445c0cf5b3dd40d36461f6e0b9adc2feb8dfb16b). The vendored bytes and SHA-256 manifest live in `Libs/libchev/`; the loader binds `namespace.LibChev`. There is no global library registry or compatibility alias.
 
 ## Shared behavior and addon policy

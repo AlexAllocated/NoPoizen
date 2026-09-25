@@ -25,6 +25,10 @@ jobs:
       - run: lua${{ matrix.lua }} scripts/test.lua . reverse
       - run: lua${{ matrix.lua }} scripts/smoke.lua . retail
       - run: lua${{ matrix.lua }} scripts/smoke.lua . forever
+      - run: lua${{ matrix.lua }} scripts/smoke.lua . era
+      - run: lua${{ matrix.lua }} scripts/smoke.lua . tbc
+      - run: lua${{ matrix.lua }} scripts/smoke.lua . mists
+      - run: lua${{ matrix.lua }} scripts/smoke.lua . titan
       - run: python3 ../library/scripts/vendor.py . --check
       - run: python3 scripts/package.py --library-source ../library --output /tmp/NoPoizen.zip
       - run: python3 -B -m unittest discover -s scripts -p 'test_*.py'
