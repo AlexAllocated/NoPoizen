@@ -2,6 +2,7 @@
   <title id="title">NoPoizen</title>
   <desc id="description">Flat-color project logo. Editable vector emblem with outlined lettering.</desc>
 
+  <rect id="background" width="1254" height="1254" fill="#F5F2E9"/>
   <g id="poison-vial">
     <path id="stopper" fill="#82A645" stroke="#222B30" stroke-width="29" stroke-linejoin="round" d="M550 260 H704 L690 343 H563 Z"/>
     <path id="bottle" fill="#82A645" d="M554 355 H700 C681 398 689 439 723 465 C784 510 827 550 827 629 C827 722 761 797 688 797 H566 C490 797 428 727 428 635 C428 554 469 514 526 470 C569 439 570 399 554 355 Z"/>
