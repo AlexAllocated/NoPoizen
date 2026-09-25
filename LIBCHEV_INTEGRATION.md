@@ -1,6 +1,6 @@
 # Shared library integration
 
-NoPoizen privately embeds **libchev 1.1.2**, pinned to immutable commit [`484a7f54aaf46c0ec042ff813b06f69bba94628f`](https://github.com/AlexAllocated/libchev/commit/484a7f54aaf46c0ec042ff813b06f69bba94628f). The vendored bytes and SHA-256 manifest live in `Libs/libchev/`; the loader binds `namespace.LibChev`. There is no global library registry or compatibility alias.
+NoPoizen privately embeds **libchev 1.1.3**, pinned to immutable commit [`445c0cf5b3dd40d36461f6e0b9adc2feb8dfb16b`](https://github.com/AlexAllocated/libchev/commit/445c0cf5b3dd40d36461f6e0b9adc2feb8dfb16b). The vendored bytes and SHA-256 manifest live in `Libs/libchev/`; the loader binds `namespace.LibChev`. There is no global library registry or compatibility alias.
 
 ## Shared behavior and addon policy
 
@@ -18,7 +18,7 @@ The consumer adapter supplies a private dynamic history store, version/environme
 - All 20 Lua files parse under both interpreters; all 18 TOC paths resolve in order and exclude offline scripts. Consumer formatting and diff whitespace checks pass.
 - Upstream `vendor.py --check` and packaging validate the immutable manifest and compare all six payloads to the upstream commit. The installable ZIP includes 63 runtime/package files; three packaging regressions and one runtime-source regression check reproducibility, missing sounds, and tampered library rejection.
 
-Runtime library load order is `libchev.lua`, `Debug.lua`, `DebugWindow.lua`, `ReportWindow.lua`, and `SelfTests.lua`, before consumer code. Update only with the upstream vendor script and a reviewed immutable revision; never edit embedded files. CI uses the same revision for independent source verification. Prepared addon version: `1.1.0`.
+Runtime library load order is `libchev.lua`, `Debug.lua`, `DebugWindow.lua`, `ReportWindow.lua`, and `SelfTests.lua`, before consumer code. Update only with the upstream vendor script and a reviewed immutable revision; never edit embedded files. CI uses the same revision for independent source verification. Prepared addon version: `1.1.1`.
 
 ## Forever fixture correction and native console
 
@@ -31,3 +31,5 @@ The shared library supplies native-style artwork on unnamed addon-owned frames a
 Offline fixtures do not establish engine-level taint safety, client rendering, audio, or actual poison detection. In Retail, run `/np test` (123 passed, 0 failed expected), inspect/copy the shared console, use category/search/clear and diagnostics, and check restriction transitions. Verify native Edit Mode drag/click/Save/Cancel, `/np edit`, loading, and audio behavior. In Forever, confirm the unsupported-monitor message and diagnostic capture; poison mechanics still require the observations described in the audit.
 
 For the stable release, the user confirmed the shared frame appearance after the texture-bounds correction. This visual confirmation does not establish every gameplay or restriction path.
+
+The 1.1.3 console keeps each window and its child controls in one native stacking group; its category menu stays inside that group. Live interaction with overlapping windows remains a separate client check.
